@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Email Triage System</title>
+<style>
+:root{--bg:#f4f5f8;--card:rgba(255,255,255,.52);--ink:#1b1e2b;--mut:#646b82;--line:rgba(100,100,150,.16);--gb:rgba(255,255,255,.75);--gd:rgba(255,255,255,.78);--gi:rgba(255,255,255,.5);--acc:#5b4fe9;--acc2:rgba(99,102,241,.13);--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--sh:0 24px 60px -18px rgba(79,70,229,.28),inset 0 1px 0 rgba(255,255,255,.8);--a1:rgba(255,170,190,.7);--a2:rgba(167,139,250,.6);--a3:rgba(125,211,252,.65);--a4:rgba(253,224,160,.6);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root[data-theme="off"]{--bg:#0f1117;--card:rgba(28,31,48,.45);--ink:#e8eaf2;--mut:#a3abc4;--line:rgba(255,255,255,.1);--gb:rgba(255,255,255,.14);--gd:rgba(20,22,36,.8);--gi:rgba(255,255,255,.06);--acc:#a5b4fc;--acc2:rgba(129,140,248,.2);--sh:0 24px 60px -20px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);--a1:rgba(236,72,153,.3);--a2:rgba(99,102,241,.42);--a3:rgba(20,184,166,.28);--a4:rgba(168,85,247,.32)}}
+:root[data-theme="off"]{--bg:#0f1117;--card:rgba(28,31,48,.45);--ink:#e8eaf2;--mut:#a3abc4;--line:rgba(255,255,255,.1);--gb:rgba(255,255,255,.14);--gd:rgba(20,22,36,.8);--gi:rgba(255,255,255,.06);--acc:#a5b4fc;--acc2:rgba(129,140,248,.2);--sh:0 24px 60px -20px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);--a1:rgba(236,72,153,.3);--a2:rgba(99,102,241,.42);--a3:rgba(20,184,166,.28);--a4:rgba(168,85,247,.32)}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;gap:16px;padding:10px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font-weight:700;font-size:16px;display:flex;gap:8px;align-items:center}.logo{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:14px}
+nav{display:flex;gap:4px}nav button{border:0;background:none;color:var(--mut);padding:8px 14px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+nav button.on{background:var(--acc2);color:var(--acc)}
+.sp{flex:1}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 12px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#fff}.btn.sm{padding:4px 9px;font-size:12px}
+.pill{font-size:12px;padding:3px 9px;border-radius:99px;background:var(--acc2);color:var(--acc);font-weight:600;white-space:nowrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:5px}
+main{max-width:1200px;margin:0 auto;padding:20px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);padding:16px}
+h2{margin:0 0 12px;font-size:18px}h3{margin:0 0 8px;font-size:14px}
+.mut{color:var(--mut);font-size:12px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.two{display:grid;grid-template-columns:340px 1fr;gap:14px}
+@media(max-width:800px){.two{grid-template-columns:1fr}}
+.list{padding:0;overflow:hidden;max-height:560px;overflow-y:auto}
+.row{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}.row:hover,.row.sel{background:var(--acc2)}
+.row b{display:block}.row .pv{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.row .meta{display:flex;justify-content:space-between;align-items:center;margin-top:4px}
+.chip{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600;background:var(--line);color:var(--mut)}
+.chip.ok{background:#16a34a22;color:var(--ok)}.chip.Urgent{background:#dc262622;color:var(--bad)}.chip.High{background:#d9770622;color:var(--warn)}.chip.Normal{background:var(--acc2);color:var(--acc)}.chip.Low{background:var(--line);color:var(--mut)}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:10px 14px;color:var(--mut);cursor:pointer;font-size:13px}.drop:hover{border-color:var(--acc);color:var(--acc)}
+.pipe{display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding-bottom:6px}
+.ag{min-width:190px;flex:1;cursor:pointer}.ag.open{outline:2px solid var(--acc)}
+.arrow{align-self:center;color:var(--mut);font-size:20px}
+.st{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--mut)}.st.Processing{color:var(--warn)}.st.Done{color:var(--ok)}
+.ag .det{display:none;margin-top:10px;font-size:12px;border-top:1px solid var(--line);padding-top:8px}.ag.open .det{display:block}
+code,pre{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--bg);border-radius:6px;padding:6px 8px;display:block;white-space:pre-wrap}
+label{font-size:12px;font-weight:600;color:var(--mut);display:block;margin:8px 0 3px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+textarea{min-height:110px;resize:vertical}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}@media(max-width:800px){.grid3{grid-template-columns:1fr}}
+.feed div{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.dept{margin-bottom:8px;padding:0;overflow:hidden}.dept>button{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:0;color:var(--ink);padding:12px 16px;font:inherit;font-weight:700;cursor:pointer}
+.dept .body{display:none;border-top:1px solid var(--line)}.dept.open .body{display:block}
+.tog{display:flex;align-items:center;gap:8px;font-weight:600}
+.sw{position:relative;width:42px;height:24px;border-radius:99px;background:var(--line);cursor:pointer;border:0}.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.sw.on{background:var(--acc)}.sw.on::after{left:21px}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:var(--bg);border-left:1px solid var(--line);z-index:20;transform:translateX(100%);transition:.2s;overflow-y:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 18px 24px;box-shadow:-8px 0 30px rgba(0,0,0,.15)}
+.drawer.on{transform:none}
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.kpi .card b{font-size:22px;display:block}
+.bars{display:flex;align-items:flex-end;gap:8px;height:110px}.bars div{flex:1;background:var(--acc);border-radius:5px 5px 0 0;position:relative}.bars span{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;place-items:center;z-index:30;padding:16px}.modal.on{display:grid}.modal .card{width:min(520px,100%)}
+/* ---- Glassmorphic layer ---- */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(42% 38% at 12% 8%,var(--a1),transparent 70%),radial-gradient(46% 40% at 88% 18%,var(--a2),transparent 70%),radial-gradient(50% 45% at 62% 98%,var(--a3),transparent 70%),radial-gradient(36% 32% at 4% 88%,var(--a4),transparent 70%);filter:blur(24px)}
+header{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;padding:16px 24px;background:transparent;border:0;pointer-events:none}
+header>*{pointer-events:auto}
+.hr{display:flex;gap:8px;align-items:center;justify-content:flex-end}
+nav{padding:5px;border-radius:99px;background:var(--card);border:1px solid var(--gb);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:var(--sh)}
+nav button{border-radius:99px;padding:9px 22px;transition:.2s}
+nav button.on{background:var(--gd);color:var(--acc);box-shadow:0 8px 22px -8px rgba(99,102,241,.5)}
+.card{background:var(--card);border:1px solid var(--gb);border-radius:22px;box-shadow:var(--sh);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%)}
+.btn{background:var(--gi);border:1px solid var(--gb);border-radius:99px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:8px 16px}
+.btn.p{background:linear-gradient(135deg,#6366f1,#8b5cf6);border-color:transparent;color:#fff;box-shadow:0 10px 26px -8px rgba(99,102,241,.65)}
+.pill{background:var(--gi);border:1px solid var(--gb);color:var(--ink);backdrop-filter:blur(12px)}
+input,select,textarea{background:var(--gi);border:1px solid var(--gb);border-radius:14px}
+.drop{background:var(--gi);border-color:var(--gb);border-radius:16px}
+code,pre{background:var(--gi)}
+.bars div{background:linear-gradient(180deg,#a78bfa,#6366f1)}
+.sw.on{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
+.drawer{background:var(--gd);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);border-left:1px solid var(--gb);box-shadow:-20px 0 60px -20px rgba(60,50,150,.35)}
+.modal .card{background:var(--gd)}
+.row:last-child{border-bottom:0}
+.bp{display:inline-block;padding:9px 18px;border-radius:99px;background:var(--card);border:1px solid var(--gb);backdrop-filter:blur(22px) saturate(170%);-webkit-backdrop-filter:blur(22px) saturate(170%);box-shadow:var(--sh);font-weight:700;font-size:14px;white-space:nowrap}
+/* centered sections */
+main{max-width:1120px}
+section>h2{text-align:center;font-size:22px;margin-bottom:16px}
+section .bar{justify-content:center}
+section .bar .sp{display:none}
+.pipe{justify-content:center}
+#depts{display:flex;flex-direction:column}
+@media(max-width:800px){header{grid-template-columns:1fr auto}nav{grid-column:1/-1;grid-row:2;justify-self:center}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="bp">AI Email Triage</span></div>
+  <nav>
+    <button class="on" data-t="inbox">Inbox</button>
+    <button data-t="agents">Agents</button>
+    <button data-t="fwd">Forwarding</button>
+  </nav>
+  <div class="hr">
+  <span class="pill"><span class="dot"></span><span id="modelBadge">Claude Sonnet</span></span>
+  <button class="btn p" id="anBtn">📊 Analytics</button>
+  </div>
+</header>
+
+<main>
+<!-- INBOX -->
+<section id="inbox" class="on">
+  <div class="bar">
+    <h2 style="margin:0">Inbox</h2><span class="mut" id="count"></span><div class="sp"></div>
+    <button class="btn" id="loadBtn">Load sample data</button>
+    <button class="btn" id="composeBtn">✎ Write your own email</button>
+    <button class="btn p" id="procBtn">▶ Process all</button>
+  </div>
+  <div class="bar">
+    <select id="src" style="width:auto"><option>Upload dataset</option><option>Connect to test email server</option></select>
+    <label class="drop" style="margin:0;flex:1">⬆ Drag &amp; drop JSON or CSV here, or click to browse<input type="file" id="file" accept=".json,.csv" hidden></label>
+  </div>
+  <div class="two">
+    <div class="card list" id="list"></div>
+    <div class="card" id="view"><span class="mut">Select an email to read it.</span></div>
+  </div>
+</section>
+
+<!-- AGENTS -->
+<section id="agents">
+  <h2>Agent pipeline</h2>
+  <div class="card" style="margin-bottom:14px">
+    <h3>Model settings</h3>
+    <div class="grid3">
+      <div><label>Provider / model</label><select id="model"><option>Claude Sonnet</option><option>GPT</option><option>Gemini</option><option>Local LLM (Ollama)</option></select></div>
+      <div><label>API endpoint</label><input id="ep" value="https://api.anthropic.com/v1/messages"></div>
+      <div><label>API key</label><input type="password" placeholder="sk-…"></div>
+    </div>
+    <p class="mut" style="margin:8px 0 0">Swap the provider here to compare models on the same test set.</p>
+  </div>
+  <div class="pipe" id="pipe"></div>
+  <div class="card" style="margin-top:14px"><h3>Live processing feed</h3><div class="feed" id="feed"><span class="mut">Nothing processed yet. Click “Process all” in the Inbox.</span></div></div>
+</section>
+
+<!-- FORWARDING -->
+<section id="fwd">
+  <div class="bar">
+    <h2 style="margin:0">Forwarding</h2><div class="sp"></div>
+    <div class="tog">Received order <button class="sw on" id="prio" aria-label="Toggle priority order"></button> AI priority order</div>
+  </div>
+  <div class="two">
+    <div id="depts"></div>
+    <div class="card" id="fview"><span class="mut">Open a department and click an email to see the suggested reply.</span></div>
+  </div>
+</section>
+</main>
+
+<!-- ANALYTICS -->
+<aside class="drawer" id="drawer">
+  <div class="bar"><h2 style="margin:0">Analytics</h2><div class="sp"></div><button class="btn sm" id="closeAn">✕ Close</button></div>
+  <div class="kpi">
+    <div class="card"><span class="mut">Total tokens</span><b id="kTok">0</b></div>
+    <div class="card"><span class="mut">Accuracy vs. labels</span><b id="kAcc">—</b></div>
+    <div class="card"><span class="mut">Human review rate</span><b id="kRev">—</b></div>
+    <div class="card"><span class="mut">Est. cost</span><b id="kCost">$0.00</b></div>
+  </div>
+  <div class="card" style="margin-bottom:12px"><h3>Tokens per agent</h3><div class="bars" id="tokBars" style="margin-bottom:22px"></div></div>
+  <div class="card" style="margin-bottom:12px"><h3>Accuracy by department</h3><div id="accDept"></div></div>
+  <div class="card"><h3>Model comparison</h3>
+    <table><tr><th>Model</th><th>Accuracy</th><th>Tokens</th><th>Avg time</th></tr>
+    <tr><td>Claude Sonnet</td><td>94%</td><td>41k</td><td>1.8s</td></tr>
+    <tr><td>GPT</td><td>92%</td><td>46k</td><td>2.1s</td></tr>
+    <tr><td>Local LLM</td><td>81%</td><td>52k</td><td>4.6s</td></tr></table>
+    <p class="mut">Placeholder data. Add error rate, confidence distribution, and more as needed.</p>
+  </div>
+</aside>
+
+<div class="modal" id="modal"><div class="card">
+  <h2>Write your own email</h2>
+  <label>From</label><input id="cFrom" value="demo@visitor.com">
+  <label>Subject</label><input id="cSub" placeholder="Subject">
+  <label>Body</label><textarea id="cBody" placeholder="Type a message to triage live…"></textarea>
+  <div class="bar" style="margin:12px 0 0"><div class="sp"></div><button class="btn" id="cCancel">Cancel</button><button class="btn p" id="cSend">Send to triage</button></div>
+</div></div>
+
+<script>
+const AGENTS=[
+ {n:"Classifier",r:"Detects the email category",p:"You are a classifier. Label the email with one category…"},
+ {n:"Prioritizer",r:"Scores urgency",p:"Rate urgency: Urgent, High, Normal, Low…"},
+ {n:"Summarizer",r:"Condenses the message",p:"Summarize the email in one sentence…"},
+ {n:"Router",r:"Picks the department",p:"Choose a department: Sales, Support, Billing, HR, IT…"},
+ {n:"Reply Drafter",r:"Writes a suggested reply",p:"Draft a polite, concise reply…"}];
+const DEPTS=["Sales","Support","Billing","HR","IT"];
+const SAMPLE=[
+ ["Dana Lee","Server down in production","Our checkout page has been returning errors since 9am. Please help ASAP.","IT","Urgent"],
+ ["Marcus Cole","Invoice #4821 overcharged","I was billed twice for last month. Can you refund the duplicate charge?","Billing","High"],
+ ["Priya Shah","Interested in enterprise plan","We are a 200-person team and would like a quote and demo.","Sales","High"],
+ ["Tom Reyes","Question about PTO policy","How many vacation days do new hires get after six months?","HR","Low"],
+ ["Alex Kim","Can't reset my password","The reset link says it has expired every time I try.","Support","Normal"],
+ ["Jo Park","Partnership proposal","Would love to explore a co-marketing opportunity next quarter.","Sales","Normal"],
+ ["Sam Ortiz","Laptop won't connect to VPN","New laptop, VPN rejects my credentials since Monday.","IT","High"],
+ ["Lena Wu","Update billing address","Please change the billing address on my account.","Billing","Low"]];
+let emails=[],sel=null,tokens=AGENTS.map(()=>0),prioOn=true;
+const $=s=>document.querySelector(s);
+const mk=(f,s,b,d,p)=>({id:Math.random().toString(36).slice(2),from:f,sub:s,body:b,dept:d,prio:p,status:"Pending",conf:0,t:Date.now()});
+function show(t){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id===t));document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));if(t==="fwd")renderF()}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>show(b.dataset.t));
+function renderList(){
+ $("#count").textContent=emails.length+" emails";
+ $("#list").innerHTML=emails.length?emails.map(e=>`<div class="row ${sel===e.id?"sel":""}" data-id="${e.id}"><b>${e.sub}</b><div class="pv">${e.from} — ${e.body}</div><div class="meta"><span class="mut">${new Date(e.t).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span><span class="chip ${e.status==="Processed"?"ok":""}">${e.status}</span></div></div>`).join(""):`<div class="row mut">No emails yet. Load sample data or write your own.</div>`;
+ document.querySelectorAll("#list .row[data-id]").forEach(r=>r.onclick=()=>{sel=r.dataset.id;renderList();const e=emails.find(x=>x.id===sel);$("#view").innerHTML=`<h2>${e.sub}</h2><p class="mut">From ${e.from}</p><p>${e.body}</p>${e.status==="Processed"?`<span class="chip ${e.prio}">${e.prio}</span> <span class="chip">${e.dept}</span> <span class="chip">${e.conf}% confidence</span>`:""}`})
+}
+$("#loadBtn").onclick=()=>{emails=SAMPLE.map(s=>mk(...s));renderList()};
+$("#composeBtn").onclick=()=>$("#modal").classList.add("on");
+$("#cCancel").onclick=()=>$("#modal").classList.remove("on");
+$("#cSend").onclick=()=>{const b=$("#cBody").value.trim();if(!b)return;const d=DEPTS[Math.floor(Math.random()*5)];emails.unshift(mk($("#cFrom").value,$("#cSub").value||"(no subject)",b,d,"Normal"));$("#cBody").value="";$("#cSub").value="";$("#modal").classList.remove("on");renderList()};
+$(".drop").onclick=()=>$("#file").click();
+$("#file").onchange=async e=>{const f=e.target.files[0];if(!f)return;const t=await f.text();try{let rows=f.name.endsWith(".json")?JSON.parse(t):t.trim().split("\n").slice(1).map(l=>{const c=l.split(",");return{from:c[0],subject:c[1],body:c.slice(2).join(",")}});emails=rows.map(r=>mk(r.from||"unknown",r.subject||"(no subject)",r.body||"",r.department||DEPTS[Math.floor(Math.random()*5)],r.priority||"Normal"));renderList()}catch(x){alert("Could not read that file.")}};
+function renderAgents(st={}){
+ $("#pipe").innerHTML=AGENTS.map((a,i)=>`<div class="card ag" data-i="${i}"><div class="st ${st[i]||"Idle"}">${st[i]||"Idle"}</div><h3>${i+1}. ${a.n}</h3><div class="mut">${a.r}</div><div class="mut" style="margin-top:8px">${emails.filter(e=>e.status==="Processed").length} processed · avg ${(0.8+i*.4).toFixed(1)}s</div><div class="det"><label>Prompt</label><code>${a.p}</code><label>Last output</label><code>${sel?"(output for selected email)":"—"}</code></div></div>${i<4?'<div class="arrow">→</div>':""}`).join("");
+ document.querySelectorAll(".ag").forEach(c=>c.onclick=()=>c.classList.toggle("open"))
+}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+$("#procBtn").onclick=async()=>{
+ const todo=emails.filter(e=>e.status!=="Processed");if(!todo.length)return;show("agents");$("#feed").innerHTML="";
+ for(const e of todo){for(let i=0;i<5;i++){renderAgents({[i]:"Processing"});$("#feed").insertAdjacentHTML("afterbegin",`<div><b>${AGENTS[i].n}</b> → ${e.sub}</div>`);tokens[i]+=Math.floor(150+Math.random()*250);await wait(220)}
+  e.status="Processed";e.conf=Math.floor(78+Math.random()*21);renderAgents({4:"Done"});updateAn()}
+ renderAgents();renderList()};
+const REPLY=e=>`Hi ${e.from.split(" ")[0]},\n\nThanks for reaching out about "${e.sub}". Our ${e.dept} team has received your message and will follow up shortly.\n\nBest regards,\nThe Team`;
+function renderF(){
+ const ok=emails.filter(e=>e.status==="Processed");
+ const ord=prioOn?{Urgent:0,High:1,Normal:2,Low:3}:null;
+ $("#depts").innerHTML=ok.length?DEPTS.map(d=>{let l=ok.filter(e=>e.dept===d);l=ord?[...l].sort((a,b)=>ord[a.prio]-ord[b.prio]):[...l].sort((a,b)=>a.t-b.t);
+  return `<div class="card dept"><button>${d}<span class="pill">${l.length}</span></button><div class="body">${l.map(e=>`<div class="row" data-id="${e.id}"><b>${e.sub}</b><div class="meta"><span class="mut">${e.from}</span><span class="chip ${e.prio}">${e.prio}</span></div></div>`).join("")||'<div class="row mut">Empty</div>'}</div></div>`}).join(""):`<div class="card mut">No processed emails yet.</div>`;
+ document.querySelectorAll(".dept>button").forEach(b=>b.onclick=()=>b.parentElement.classList.toggle("open"));
+ document.querySelectorAll("#depts .row[data-id]").forEach(r=>r.onclick=()=>{const e=emails.find(x=>x.id===r.dataset.id);
+  $("#fview").innerHTML=`<h2>${e.sub}</h2><p class="mut">From ${e.from}</p><p>${e.body}</p><span class="chip ${e.prio}">${e.prio}</span> <span class="chip">${e.dept}</span> <span class="chip">${e.conf}% confidence</span><h3 style="margin-top:16px">Suggested reply</h3><textarea>${REPLY(e)}</textarea><div class="bar" style="margin:10px 0 0"><button class="btn p">Approve &amp; send</button><button class="btn">Regenerate</button><button class="btn">Flag for human review</button></div>`})
+}
+$("#prio").onclick=()=>{prioOn=!prioOn;$("#prio").classList.toggle("on",prioOn);renderF()};
+function updateAn(){
+ const t=tokens.reduce((a,b)=>a+b,0),n=emails.filter(e=>e.status==="Processed").length;
+ $("#kTok").textContent=t.toLocaleString();$("#kCost").textContent="$"+(t*0.000003).toFixed(3);
+ $("#kAcc").textContent=n?"94%":"—";$("#kRev").textContent=n?"8%":"—";
+ const m=Math.max(...tokens,1);$("#tokBars").innerHTML=tokens.map((v,i)=>`<div style="height:${Math.max(4,v/m*100)}%"><span>${AGENTS[i].n.split(" ")[0]}</span></div>`).join("");
+ $("#accDept").innerHTML=DEPTS.map((d,i)=>{const v=[96,93,95,90,92][i];return `<div style="margin-bottom:6px"><div class="mut">${d} · ${v}%</div><div style="height:8px;border-radius:6px;background:var(--line)"><div style="height:8px;border-radius:6px;background:var(--acc);width:${v}%"></div></div></div>`}).join("")
+}
+$("#anBtn").onclick=()=>$("#drawer").classList.add("on");$("#closeAn").onclick=()=>$("#drawer").classList.remove("on");
+$("#model").onchange=e=>$("#modelBadge").textContent=e.target.value;
+renderList();renderAgents();updateAn();
+</script>
+</body>
+</html>

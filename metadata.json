@@ -1,0 +1,6 @@
+{
+  "name": "Centelli CommsIQ - AI Email Triage System",
+  "description": "Multi-agent AI email triage platform featuring security scrubbing, intent classification, automated routing, reply drafting, and model switching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
