@@ -419,7 +419,7 @@ async function callAnthropic(
   return { text: cleaned, inputTokens, outputTokens };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number = 12000): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number = 5500): Promise<T> {
   let timeoutId: NodeJS.Timeout;
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(`API call timed out after ${ms}ms`)), ms);
@@ -443,17 +443,17 @@ async function callAgent(
 
   try {
     if (config.provider === 'gemini') {
-      const res = await withTimeout(callGemini(systemInstruction, userPrompt, config.model, config.apiKey), 12000);
+      const res = await withTimeout(callGemini(systemInstruction, userPrompt, config.model, config.apiKey), 5500);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
     } else if (config.provider === 'openai' || config.provider === 'ollama' || config.provider === 'custom') {
-      const res = await withTimeout(callOpenAICompatible(systemInstruction, userPrompt, config), 12000);
+      const res = await withTimeout(callOpenAICompatible(systemInstruction, userPrompt, config), 5500);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
     } else if (config.provider === 'anthropic') {
-      const res = await withTimeout(callAnthropic(systemInstruction, userPrompt, config), 12000);
+      const res = await withTimeout(callAnthropic(systemInstruction, userPrompt, config), 5500);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
@@ -487,7 +487,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // Test Endpoint / Connection Check
 app.post('/api/test-connection', async (req: Request, res: Response) => {
-  const config: LLMConfig = req.body.config;
+  const config: LLMConfig = req.body.config || req.body || {};
   try {
     if (config.provider === 'gemini') {
       const apiKey = config.apiKey || process.env.GEMINI_API_KEY;
@@ -498,9 +498,9 @@ app.post('/api/test-connection', async (req: Request, res: Response) => {
         'Return JSON: {"status": "ok", "provider": "gemini"}',
         'Ping',
         config.model || 'gemini-3.8-flash',
-        config.apiKey
+        apiKey
       );
-      return res.json({ success: true, message: `Connected to Gemini (${config.model})`, payload: JSON.parse(test.text) });
+      return res.json({ success: true, message: `Connected to Gemini (${config.model || 'gemini-3.8-flash'})`, payload: JSON.parse(test.text) });
     } else if (config.provider === 'openai' || config.provider === 'custom' || config.provider === 'ollama') {
       const test = await callOpenAICompatible(
         'Return JSON: {"status": "ok"}',

@@ -29,11 +29,12 @@ export function renderSanitizedText(text: string): React.ReactNode {
 }
 
 /**
- * Format currency in USD
+ * Format currency in USD with null and NaN safety
  */
-export function formatUSD(amount: number): string {
-  if (amount < 0.0001 && amount > 0) {
-    return `$${amount.toFixed(6)}`;
+export function formatUSD(amount?: number | null): string {
+  const num = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
+  if (num < 0.0001 && num > 0) {
+    return `$${num.toFixed(6)}`;
   }
-  return `$${amount.toFixed(4)}`;
+  return `$${num.toFixed(4)}`;
 }

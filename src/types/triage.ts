@@ -126,3 +126,41 @@ export interface PipelineAgentDef {
   promptInstructions: string;
   expectedOutputKeys: string[];
 }
+
+export interface TriageRunRecord {
+  runId: string;
+  timestamp: number;
+  dateStr: string;
+  emailId: string;
+  from: string;
+  subject: string;
+  provider: string;
+  model: string;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUSD: number;
+  isSafe: boolean;
+  securityFlag: SecurityFlag;
+  piiRedacted: boolean;
+  category: string;
+  intent: string;
+  urgency: number;
+  sentiment: string;
+  confidenceScore: number;
+  needsHumanReview: boolean;
+  targetQueue: string;
+  priorityTag: PriorityTag;
+  notificationChannel: NotificationChannel;
+  crmAction: CRMAction;
+  routingReason: string;
+  draftStatus: DraftStatus;
+  draftSubject: string;
+  draftBody: string;
+  templateUsed: string;
+  costTip: string;
+  businessAdvisory: string;
+  extractedMetadata: ExtractedMetadata;
+  slate: BlackboardSlate;
+}

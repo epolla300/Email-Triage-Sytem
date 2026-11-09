@@ -4,17 +4,34 @@ import { InboxTab } from './components/InboxTab';
 import { AgentsTab } from './components/AgentsTab';
 import { ForwardingTab } from './components/ForwardingTab';
 import { AnalyticsDrawer } from './components/AnalyticsDrawer';
+import { AnalyticsTab } from './components/AnalyticsTab';
 import { ComposeModal } from './components/ComposeModal';
-import { EmailItem, LLMConfig, BlackboardSlate } from './types/triage';
+import { EmailItem, LLMConfig, BlackboardSlate, TriageRunRecord } from './types/triage';
 import { DEFAULT_LLM_CONFIG } from './constants/agents';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'inbox' | 'agents' | 'forwarding'>('inbox');
+  const [activeTab, setActiveTab] = useState<'inbox' | 'agents' | 'forwarding' | 'analytics'>('inbox');
   
   // Emails start empty strictly per prompt constraint:
   // "Do not add unnesscary test data or fill in any for examples, that is for the user to do."
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+
+  // Run history memory from past tests across models, persisted in localStorage
+  const [runHistory, setRunHistory] = useState<TriageRunRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('centelli_triage_run_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(Boolean);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load past run history from localStorage', e);
+    }
+    return [];
+  });
 
   const [llmConfig, setLLMConfig] = useState<LLMConfig>(DEFAULT_LLM_CONFIG);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
@@ -130,6 +147,64 @@ export default function App() {
           'success'
         );
 
+        // Record run in memory & spreadsheet history
+        const inTok = slate.agent5_telemetry?.telemetry_summary.total_input_tokens ?? 0;
+        const outTok = slate.agent5_telemetry?.telemetry_summary.total_output_tokens ?? 0;
+        const calcCost = slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd ?? ((inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015);
+
+        const newRunRecord: TriageRunRecord = {
+          runId: `RUN-${Date.now().toString(36).toUpperCase()}`,
+          timestamp: Date.now(),
+          dateStr: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }),
+          emailId: emailId,
+          from: target.from,
+          subject: target.subject,
+          provider: llmConfig.provider,
+          model: llmConfig.model,
+          durationMs: slate.execution_meta?.totalDurationMs ?? 0,
+          inputTokens: inTok,
+          outputTokens: outTok,
+          totalTokens: inTok + outTok,
+          costUSD: calcCost,
+          isSafe,
+          securityFlag: slate.agent1_sanitizer?.security_flag || 'NONE',
+          piiRedacted: Boolean(slate.agent1_sanitizer?.pii_redacted),
+          category: slate.agent2_classifier?.category || 'Unclassified',
+          intent: slate.agent2_classifier?.intent || 'General',
+          urgency: slate.agent2_classifier?.urgency || 1,
+          sentiment: slate.agent2_classifier?.sentiment || 'Neutral',
+          confidenceScore: slate.agent2_classifier?.confidence_score ?? 0.85,
+          needsHumanReview: Boolean(slate.agent2_classifier?.needs_human_review),
+          targetQueue: slate.agent3_router?.target_queue || 'General_Queue',
+          priorityTag: slate.agent3_router?.priority_tag || 'NORMAL',
+          notificationChannel: slate.agent3_router?.notification_channel || 'NONE',
+          crmAction: slate.agent3_router?.crm_action || 'LOG_ONLY',
+          routingReason: slate.agent3_router?.routing_reason || '',
+          draftStatus: slate.agent4_reply?.draft_status || 'READY_FOR_APPROVAL',
+          draftSubject: slate.agent4_reply?.subject_line || '',
+          draftBody: slate.agent4_reply?.body_text || '',
+          templateUsed: slate.agent4_reply?.template_used || '',
+          costTip: slate.agent5_telemetry?.cost_optimization_recommendation || '',
+          businessAdvisory: slate.agent5_telemetry?.business_process_advisory || '',
+          extractedMetadata: slate.agent2_classifier?.extracted_metadata || {
+            account_id: null,
+            requested_dates: null,
+            party_size: null,
+            estimated_value: null,
+          },
+          slate
+        };
+
+        setRunHistory((prev) => {
+          const updated = [newRunRecord, ...prev];
+          try {
+            localStorage.setItem('centelli_triage_run_history', JSON.stringify(updated.slice(0, 150)));
+          } catch (e) {
+            console.error('Failed to persist run history', e);
+          }
+          return updated;
+        });
+
         setEmails((prev) =>
           prev.map((e) =>
             e.id === emailId
@@ -175,6 +250,16 @@ export default function App() {
       setEmails([]);
       setSelectedEmailId(null);
       setFeedEvents([]);
+    }
+  };
+
+  // Clear past run test memory
+  const handleClearHistory = () => {
+    if (window.confirm('Clear all historical test memory and spreadsheet runs? This cannot be undone.')) {
+      setRunHistory([]);
+      try {
+        localStorage.removeItem('centelli_triage_run_history');
+      } catch (e) {}
     }
   };
 
@@ -247,7 +332,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         llmConfig={llmConfig}
-        onOpenAnalytics={() => setIsAnalyticsOpen(true)}
+        onOpenAnalytics={() => setActiveTab('analytics')}
         emailCount={emails.length}
         processedCount={processedCount}
         isProcessing={isProcessing}
@@ -291,6 +376,16 @@ export default function App() {
             onRegenerateReply={handleProcessSingle}
           />
         )}
+
+        {activeTab === 'analytics' && (
+          <AnalyticsTab
+            emails={emails}
+            runHistory={runHistory}
+            onClearHistory={handleClearHistory}
+            activeProvider={llmConfig.provider}
+            activeModel={llmConfig.model}
+          />
+        )}
       </main>
 
       {/* Compose Email Modal */}
@@ -300,11 +395,14 @@ export default function App() {
         onSubmit={handleAddEmail}
       />
 
-      {/* Telemetry & Analytics Sliding Drawer */}
+      {/* Telemetry & Analytics Sliding Drawer with Past Run Memory */}
       <AnalyticsDrawer
         isOpen={isAnalyticsOpen}
         onClose={() => setIsAnalyticsOpen(false)}
         emails={emails}
+        runHistory={runHistory}
+        onClearHistory={handleClearHistory}
+        activeProvider={llmConfig.provider}
         activeModel={llmConfig.model}
       />
     </div>

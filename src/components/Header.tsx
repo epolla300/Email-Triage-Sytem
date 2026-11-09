@@ -3,8 +3,8 @@ import { Bot, BarChart3, Inbox, Send } from 'lucide-react';
 import { LLMConfig } from '../types/triage';
 
 interface HeaderProps {
-  activeTab: 'inbox' | 'agents' | 'forwarding';
-  setActiveTab: (tab: 'inbox' | 'agents' | 'forwarding') => void;
+  activeTab: 'inbox' | 'agents' | 'forwarding' | 'analytics';
+  setActiveTab: (tab: 'inbox' | 'agents' | 'forwarding' | 'analytics') => void;
   llmConfig: LLMConfig;
   onOpenAnalytics: () => void;
   emailCount: number;
@@ -27,8 +27,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Top Left: Analytics & Model Pill */}
         <div className="pointer-events-auto flex items-center gap-2.5 justify-start">
           <button
-            onClick={onOpenAnalytics}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/20 transition-all hover:scale-[1.02] active:scale-100 cursor-pointer"
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:scale-[1.02] active:scale-100 cursor-pointer ${
+              activeTab === 'analytics'
+                ? 'bg-gradient-to-r from-indigo-700 to-violet-700 text-white shadow-md shadow-indigo-500/25 ring-2 ring-indigo-400/50'
+                : 'text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/20'
+            }`}
           >
             <BarChart3 className="w-3.5 h-3.5" />
             <span>Analytics</span>
@@ -51,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
         <nav className="pointer-events-auto justify-self-center flex items-center p-1 rounded-full bg-white/70 border border-white/80 backdrop-blur-xl shadow-md shadow-indigo-500/5">
           <button
             onClick={() => setActiveTab('inbox')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'inbox'
                 ? 'bg-white text-indigo-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -68,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => setActiveTab('agents')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all relative cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all relative cursor-pointer ${
               activeTab === 'agents'
                 ? 'bg-white text-indigo-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -83,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={() => setActiveTab('forwarding')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'forwarding'
                 ? 'bg-white text-indigo-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -96,6 +100,18 @@ export const Header: React.FC<HeaderProps> = ({
                 {processedCount}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'analytics'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Analytics</span>
           </button>
         </nav>
 
