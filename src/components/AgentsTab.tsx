@@ -259,20 +259,50 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
 
       {/* 5-Agent Interactive Blackboard Pipeline */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <span>Pipeline Architecture (Blackboard Slate)</span>
-            {selectedEmail && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-normal">
-                Inspecting: "{selectedEmail.subject}"
-              </span>
-            )}
-          </h3>
-          <span className="text-[11px] text-slate-500 font-medium">Click any agent card to inspect slate JSON</span>
+        <div className="flex items-center justify-between flex-wrap gap-2.5">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>Pipeline Architecture (Blackboard Slate)</span>
+              {selectedEmail && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 font-normal">
+                  Inspecting: "{selectedEmail.subject}" {selectedEmail.datasetName ? `[Dataset: ${selectedEmail.datasetName}]` : ''}
+                </span>
+              )}
+            </h3>
+          </div>
+
+          {/* Telemetry Agent ON/OFF Toggle */}
+          <div className="flex items-center gap-2.5 bg-white/90 px-3.5 py-1.5 rounded-full border border-slate-200 shadow-2xs">
+            <span className="text-xs font-bold text-slate-800">Agent 5 (Telemetry):</span>
+            <button
+              type="button"
+              onClick={() =>
+                setLLMConfig({
+                  ...llmConfig,
+                  enableTelemetry: llmConfig.enableTelemetry === false ? true : false
+                })
+              }
+              className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                llmConfig.enableTelemetry !== false ? 'bg-indigo-600' : 'bg-slate-300'
+              }`}
+              title="Toggle Agent 5 (Telemetry Agent) ON or OFF to save tokens and latency"
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  llmConfig.enableTelemetry !== false ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <span className={`text-[11px] font-bold ${llmConfig.enableTelemetry !== false ? 'text-emerald-700' : 'text-slate-500'}`}>
+              {llmConfig.enableTelemetry !== false ? 'Active' : 'Bypassed (Off)'}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {AGENT_DEFINITIONS.map((agent, index) => {
+            const isTelemetryAgent = agent.id === 5;
+            const isTelemetryBypassed = isTelemetryAgent && llmConfig.enableTelemetry === false;
             const isCurrent = isProcessing && activeAgentIndex === index;
             const output = getAgentOutput(agent.id);
             const isDone = Boolean(output);
@@ -284,7 +314,9 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                 key={agent.id}
                 onClick={() => setExpandedAgentId(isExpanded ? null : agent.id)}
                 className={`p-4 rounded-2xl cursor-pointer transition-all duration-200 border flex flex-col justify-between ${
-                  isExpanded
+                  isTelemetryBypassed
+                    ? 'bg-slate-50/70 border-dashed border-slate-300 opacity-80'
+                    : isExpanded
                     ? 'bg-white border-indigo-600 shadow-md ring-2 ring-indigo-500/20'
                     : 'bg-white/80 border-slate-200 hover:border-indigo-400 hover:bg-white shadow-2xs'
                 } ${isCurrent ? 'animate-pulse bg-indigo-50 border-indigo-400' : ''}`}
@@ -296,38 +328,66 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       STEP {agent.id}
                     </span>
 
-                    {isCurrent && (
+                    {isTelemetryBypassed ? (
+                      <span className="text-[10px] font-bold text-slate-500 px-1.5 py-0.5 rounded bg-slate-200/80">
+                        Bypassed
+                      </span>
+                    ) : isCurrent ? (
                       <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-ping" />
                         Running
                       </span>
-                    )}
-                    {!isCurrent && isDone && !isAgent1Threat && (
+                    ) : isDone && !isAgent1Threat ? (
                       <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3 text-emerald-600" /> Done
                       </span>
-                    )}
-                    {isAgent1Threat && (
+                    ) : isAgent1Threat ? (
                       <span className="text-[10px] font-bold text-red-700 flex items-center gap-1">
                         <ShieldAlert className="w-3 h-3 text-red-600" /> Flagged
                       </span>
-                    )}
-                    {!isCurrent && !isDone && (
+                    ) : (
                       <span className="text-[10px] font-medium text-slate-500">Idle</span>
                     )}
                   </div>
 
-                  <h4 className="text-xs font-bold text-slate-900 mb-1">
-                    {agent.name}
-                  </h4>
+                  <div className="flex items-center justify-between mb-1">
+                    <h4 className="text-xs font-bold text-slate-900">
+                      {agent.name}
+                    </h4>
+                    {isTelemetryAgent && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLLMConfig({
+                            ...llmConfig,
+                            enableTelemetry: llmConfig.enableTelemetry === false ? true : false
+                          });
+                        }}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                          llmConfig.enableTelemetry !== false
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300'
+                        }`}
+                        title="Click to toggle Telemetry Agent ON/OFF"
+                      >
+                        {llmConfig.enableTelemetry !== false ? 'ON' : 'OFF'}
+                      </button>
+                    )}
+                  </div>
+
                   <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed font-medium">
-                    {agent.description}
+                    {isTelemetryBypassed
+                      ? 'Bypassed in pipeline settings to save tokens and execution time.'
+                      : agent.description}
                   </p>
                 </div>
 
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
                   <span>
-                    {slate?.execution_meta?.stepDurationsMs?.[`agent${agent.id}`]
+                    {isTelemetryBypassed
+                      ? 'Skipped (0ms)'
+                      : slate?.execution_meta?.stepDurationsMs?.[`agent${agent.id}`]
                       ? `${slate.execution_meta.stepDurationsMs[`agent${agent.id}`]}ms`
                       : 'avg ~0.9s'}
                   </span>

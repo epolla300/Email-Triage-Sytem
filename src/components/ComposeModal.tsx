@@ -4,13 +4,14 @@ import { X, Send } from 'lucide-react';
 interface ComposeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (email: { from: string; subject: string; body: string }) => void;
+  onSubmit: (email: { from: string; subject: string; body: string; datasetName?: string }) => void;
 }
 
 export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onSubmit }) => {
   const [from, setFrom] = useState('contact@external-client.com');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [datasetName, setDatasetName] = useState('Manual QA Suite');
 
   if (!isOpen) return null;
 
@@ -20,7 +21,8 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
     onSubmit({
       from: from.trim() || 'anonymous@visitor.com',
       subject: subject.trim() || '(No Subject)',
-      body: body.trim()
+      body: body.trim(),
+      datasetName: datasetName.trim() || 'Manual QA Suite'
     });
     setSubject('');
     setBody('');
@@ -136,18 +138,33 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              From (Sender):
-            </label>
-            <input
-              type="text"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              placeholder="e.g. client@enterprise.com"
-              className="w-full px-3 py-2 text-sm rounded-xl bg-white text-slate-900 border border-slate-300 shadow-2xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none"
-              required
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                From (Sender):
+              </label>
+              <input
+                type="text"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                placeholder="e.g. client@enterprise.com"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-white text-slate-900 border border-slate-300 shadow-2xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Dataset / Test Suite Tag:
+              </label>
+              <input
+                type="text"
+                value={datasetName}
+                onChange={(e) => setDatasetName(e.target.value)}
+                placeholder="e.g. Security Test Suite, Q3 Inquiries"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-white text-slate-900 border border-slate-300 shadow-2xs focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none"
+              />
+            </div>
           </div>
 
           <div>

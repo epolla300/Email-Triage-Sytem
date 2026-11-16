@@ -149,7 +149,8 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   provider: 'gemini',
   model: 'gemini-3.8-flash',
   endpoint: 'https://generativelanguage.googleapis.com',
-  apiKey: ''
+  apiKey: '',
+  enableTelemetry: true
 };
 
 export const AVAILABLE_PROVIDERS: { id: LLMConfig['provider']; name: string; defaultModel: string; defaultEndpoint: string; note: string }[] = [

@@ -3,6 +3,7 @@ import { TriageRunRecord } from '../types/triage';
 
 /**
  * Exports historical triage runs to a formatted .xlsx workbook with multiple sheets
+ * including dataset tracking and model comparisons per dataset.
  */
 export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_CommsIQ_Triage_Runs.xlsx') {
   if (!runs || runs.length === 0) {
@@ -10,12 +11,14 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     return;
   }
 
-  // Sheet 1: Detailed Run History
+  // Sheet 1: Detailed Run History with Dataset and Telemetry status
   const detailRows = runs.map((r) => ({
     'Run ID': r.runId || '',
     'Timestamp': r.dateStr || '',
+    'Dataset Name': r.datasetName || 'General Queue',
     'Provider': r.provider || '',
     'Model': r.model || '',
+    'Telemetry Agent': r.telemetryEnabled !== false ? 'Active' : 'Bypassed',
     'Latency (ms)': r.durationMs || 0,
     'Sender (From)': r.from || '',
     'Subject': r.subject || '',
@@ -65,10 +68,32 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     }
   > = {};
 
+  // Sheet 3: Dataset x Model Benchmark Aggregation
+  const datasetModelStats: Record<
+    string,
+    {
+      datasetName: string;
+      modelKey: string;
+      runs: number;
+      totalDuration: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+      totalTokens: number;
+      totalCost: number;
+      threats: number;
+      humanReviews: number;
+      highConfidence: number;
+    }
+  > = {};
+
   runs.forEach((r) => {
-    const key = `${r.provider} - ${r.model}`;
-    if (!modelStats[key]) {
-      modelStats[key] = {
+    const modelKey = `${r.provider} - ${r.model}`;
+    const dataset = r.datasetName || 'General Queue';
+    const comboKey = `${dataset} __ ${modelKey}`;
+
+    // Overall model stats
+    if (!modelStats[modelKey]) {
+      modelStats[modelKey] = {
         runs: 0,
         totalDuration: 0,
         totalInputTokens: 0,
@@ -80,16 +105,43 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
         highConfidence: 0
       };
     }
-    const s = modelStats[key];
-    s.runs += 1;
-    s.totalDuration += r.durationMs || 0;
-    s.totalInputTokens += r.inputTokens || 0;
-    s.totalOutputTokens += r.outputTokens || 0;
-    s.totalTokens += r.totalTokens || 0;
-    s.totalCost += r.costUSD || 0;
-    if (!r.isSafe) s.threats += 1;
-    if (r.needsHumanReview) s.humanReviews += 1;
-    if ((r.confidenceScore ?? 0) >= 0.85) s.highConfidence += 1;
+    const ms = modelStats[modelKey];
+    ms.runs += 1;
+    ms.totalDuration += r.durationMs || 0;
+    ms.totalInputTokens += r.inputTokens || 0;
+    ms.totalOutputTokens += r.outputTokens || 0;
+    ms.totalTokens += r.totalTokens || 0;
+    ms.totalCost += r.costUSD || 0;
+    if (!r.isSafe) ms.threats += 1;
+    if (r.needsHumanReview) ms.humanReviews += 1;
+    if ((r.confidenceScore ?? 0) >= 0.85) ms.highConfidence += 1;
+
+    // Dataset x Model stats
+    if (!datasetModelStats[comboKey]) {
+      datasetModelStats[comboKey] = {
+        datasetName: dataset,
+        modelKey,
+        runs: 0,
+        totalDuration: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        threats: 0,
+        humanReviews: 0,
+        highConfidence: 0
+      };
+    }
+    const dms = datasetModelStats[comboKey];
+    dms.runs += 1;
+    dms.totalDuration += r.durationMs || 0;
+    dms.totalInputTokens += r.inputTokens || 0;
+    dms.totalOutputTokens += r.outputTokens || 0;
+    dms.totalTokens += r.totalTokens || 0;
+    dms.totalCost += r.costUSD || 0;
+    if (!r.isSafe) dms.threats += 1;
+    if (r.needsHumanReview) dms.humanReviews += 1;
+    if ((r.confidenceScore ?? 0) >= 0.85) dms.highConfidence += 1;
   });
 
   const summaryRows = Object.entries(modelStats).map(([modelKey, s]) => ({
@@ -107,18 +159,35 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     'Security Threats Flagged': s.threats
   }));
 
+  const datasetRows = Object.values(datasetModelStats).map((s) => ({
+    'Dataset Name': s.datasetName,
+    'Model & Provider': s.modelKey,
+    'Emails Processed': s.runs,
+    'Avg Latency (s)': (s.totalDuration / s.runs / 1000).toFixed(2) + 's',
+    'Total Tokens': s.totalTokens,
+    'Avg Tokens / Email': Math.round(s.totalTokens / s.runs),
+    'Total Cost ($USD)': Number(s.totalCost.toFixed(5)),
+    'Est. Cost / 1k ($)': Number(((s.totalCost / s.runs) * 1000).toFixed(3)),
+    'High Confidence Rate (%)': Math.round((s.highConfidence / s.runs) * 100) + '%',
+    'Human Review Rate (%)': Math.round((s.humanReviews / s.runs) * 100) + '%',
+    'Security Threats': s.threats
+  }));
+
   const wb = XLSX.utils.book_new();
 
   // Create worksheets
   const wsDetail = XLSX.utils.json_to_sheet(detailRows);
   const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
+  const wsDataset = XLSX.utils.json_to_sheet(datasetRows);
 
   // Set column widths for readability
   wsDetail['!cols'] = [
     { wch: 12 }, // Run ID
     { wch: 20 }, // Timestamp
+    { wch: 22 }, // Dataset Name
     { wch: 14 }, // Provider
     { wch: 22 }, // Model
+    { wch: 16 }, // Telemetry Agent
     { wch: 12 }, // Latency
     { wch: 24 }, // Sender
     { wch: 30 }, // Subject
@@ -167,8 +236,23 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     { wch: 22 }  // Security Threats
   ];
 
+  wsDataset['!cols'] = [
+    { wch: 26 }, // Dataset Name
+    { wch: 28 }, // Model & Provider
+    { wch: 16 }, // Emails Processed
+    { wch: 16 }, // Avg Latency
+    { wch: 16 }, // Total Tokens
+    { wch: 18 }, // Avg Tokens / Email
+    { wch: 18 }, // Total Cost
+    { wch: 18 }, // Est. Cost / 1k
+    { wch: 22 }, // High Conf Rate
+    { wch: 20 }, // Human Review
+    { wch: 18 }  // Security Threats
+  ];
+
   XLSX.utils.book_append_sheet(wb, wsDetail, 'Triage_Run_History');
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Model_Benchmark_Summary');
+  XLSX.utils.book_append_sheet(wb, wsDataset, 'Dataset_By_Model_Benchmark');
 
   // Trigger browser download
   XLSX.writeFile(wb, filename);

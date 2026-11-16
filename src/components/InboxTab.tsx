@@ -177,9 +177,16 @@ export const InboxTab: React.FC<InboxTabProps> = ({
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <span className="font-bold text-xs text-slate-900 truncate max-w-[200px]">
-                      {e.from}
-                    </span>
+                    <div className="flex items-center gap-1.5 truncate max-w-[240px]">
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        {e.from}
+                      </span>
+                      {e.datasetName && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
+                          📁 {e.datasetName}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] text-slate-500 font-medium whitespace-nowrap">
                       {new Date(e.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -259,8 +266,16 @@ export const InboxTab: React.FC<InboxTabProps> = ({
                     <h2 className="text-base font-bold text-slate-900">
                       {selectedEmail.subject}
                     </h2>
-                    <div className="flex items-center gap-2 text-xs text-slate-600 mt-1">
+                    <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
                       <span>From: <strong className="text-slate-800">{selectedEmail.from}</strong></span>
+                      {selectedEmail.datasetName && (
+                        <>
+                          <span>·</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200">
+                            📁 Dataset: {selectedEmail.datasetName}
+                          </span>
+                        </>
+                      )}
                       <span>·</span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-slate-400" />

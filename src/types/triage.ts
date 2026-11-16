@@ -106,6 +106,7 @@ export interface EmailItem {
   activeStepIndex?: number;
   error?: string;
   slate?: BlackboardSlate;
+  datasetName?: string;
 }
 
 export type LLMProviderId = 'gemini' | 'openai' | 'anthropic' | 'ollama' | 'custom';
@@ -115,6 +116,7 @@ export interface LLMConfig {
   model: string;
   endpoint: string;
   apiKey?: string;
+  enableTelemetry?: boolean;
 }
 
 export interface PipelineAgentDef {
@@ -131,6 +133,8 @@ export interface TriageRunRecord {
   runId: string;
   timestamp: number;
   dateStr: string;
+  datasetName: string;
+  telemetryEnabled: boolean;
   emailId: string;
   from: string;
   subject: string;

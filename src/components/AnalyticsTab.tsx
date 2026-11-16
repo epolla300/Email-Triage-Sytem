@@ -12,8 +12,11 @@ import {
   Layers,
   Cpu,
   X,
-  RefreshCw,
-  Sparkles
+  Sparkles,
+  Database,
+  Filter,
+  Check,
+  ZapOff
 } from 'lucide-react';
 import { EmailItem, TriageRunRecord } from '../types/triage';
 import { formatUSD } from '../utils/redaction';
@@ -25,6 +28,8 @@ interface AnalyticsTabProps {
   onClearHistory: () => void;
   activeProvider: string;
   activeModel: string;
+  telemetryEnabled?: boolean;
+  onToggleTelemetry?: () => void;
 }
 
 export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
@@ -32,10 +37,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   runHistory = [],
   onClearHistory,
   activeProvider = 'gemini',
-  activeModel = 'gemini-3.8-flash'
+  activeModel = 'gemini-3.8-flash',
+  telemetryEnabled = true,
+  onToggleTelemetry
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModelFilter, setSelectedModelFilter] = useState<string>('all');
+  const [selectedDatasetFilter, setSelectedDatasetFilter] = useState<string>('all');
   const [inspectingRun, setInspectingRun] = useState<TriageRunRecord | null>(null);
 
   // Safe run history array
@@ -48,6 +56,80 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
       ? emails.filter((e) => e && (e.status === 'Processed' || e.status === 'Security_Flagged'))
       : [];
   }, [emails]);
+
+  // Unique datasets recorded across runs
+  const uniqueDatasets = useMemo(() => {
+    const set = new Set<string>();
+    safeHistory.forEach((r) => {
+      if (r.datasetName) set.add(r.datasetName);
+    });
+    return Array.from(set);
+  }, [safeHistory]);
+
+  // Unique models recorded across runs
+  const uniqueModels = useMemo(() => {
+    const set = new Set<string>();
+    safeHistory.forEach((r) => {
+      if (r.model) set.add(r.model);
+    });
+    return Array.from(set);
+  }, [safeHistory]);
+
+  // Dataset x Model Breakdown Memory
+  const datasetModelBreakdown = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        datasetName: string;
+        modelKey: string;
+        provider: string;
+        model: string;
+        runs: number;
+        totalDuration: number;
+        totalTokens: number;
+        totalCost: number;
+        telemetryBypassedCount: number;
+        highConfCount: number;
+        humanReviewCount: number;
+        threatsCount: number;
+      }
+    > = {};
+
+    safeHistory.forEach((r) => {
+      const ds = r.datasetName || 'General Queue';
+      const mKey = `${r.provider} - ${r.model}`;
+      const combo = `${ds} ___ ${mKey}`;
+
+      if (!map[combo]) {
+        map[combo] = {
+          datasetName: ds,
+          modelKey: mKey,
+          provider: r.provider,
+          model: r.model,
+          runs: 0,
+          totalDuration: 0,
+          totalTokens: 0,
+          totalCost: 0,
+          telemetryBypassedCount: 0,
+          highConfCount: 0,
+          humanReviewCount: 0,
+          threatsCount: 0
+        };
+      }
+
+      const item = map[combo];
+      item.runs += 1;
+      item.totalDuration += r.durationMs || 0;
+      item.totalTokens += r.totalTokens || 0;
+      item.totalCost += r.costUSD || 0;
+      if (r.telemetryEnabled === false) item.telemetryBypassedCount += 1;
+      if ((r.confidenceScore || 0) >= 0.85) item.highConfCount += 1;
+      if (r.needsHumanReview) item.humanReviewCount += 1;
+      if (!r.isSafe) item.threatsCount += 1;
+    });
+
+    return Object.values(map);
+  }, [safeHistory]);
 
   // Derive stats source from runHistory or active session
   const statsSource = useMemo(() => {
@@ -65,6 +147,8 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         runId: `SES-${idx + 1}`,
         timestamp: e.receivedAt || Date.now(),
         dateStr: new Date(e.receivedAt || Date.now()).toLocaleString(),
+        datasetName: e.datasetName || 'General Queue',
+        telemetryEnabled: telemetryEnabled,
         emailId: e.id,
         from: e.from || 'sender@domain.com',
         subject: e.subject || '(no subject)',
@@ -104,7 +188,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         slate: s!
       } as TriageRunRecord;
     });
-  }, [safeHistory, processedEmails, activeProvider, activeModel]);
+  }, [safeHistory, processedEmails, activeProvider, activeModel, telemetryEnabled]);
 
   // Aggregate metrics safely
   let totalInputTokens = 0;
@@ -113,6 +197,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   let threatsCount = 0;
   let reviewCount = 0;
   let highConfCount = 0;
+  let bypassedCount = 0;
 
   const agentTokens = [0, 0, 0, 0, 0];
 
@@ -126,12 +211,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
     if (!r.isSafe) threatsCount++;
     if (r.needsHumanReview) reviewCount++;
     if ((r.confidenceScore || 0) >= 0.85) highConfCount++;
+    if (r.telemetryEnabled === false) bypassedCount++;
 
     agentTokens[0] += Math.floor(inT * 0.22);
     agentTokens[1] += Math.floor(inT * 0.28);
     agentTokens[2] += Math.floor(inT * 0.18);
     agentTokens[3] += Math.floor(inT * 0.24);
-    agentTokens[4] += Math.floor(inT * 0.08);
+    agentTokens[4] += r.telemetryEnabled === false ? 0 : Math.floor(inT * 0.08);
   });
 
   const totalTokens = totalInputTokens + totalOutputTokens;
@@ -139,75 +225,6 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   const humanReviewRate = totalRuns > 0 ? Math.round((reviewCount / totalRuns) * 100) : 0;
   const confidenceRate = totalRuns > 0 ? Math.round((highConfCount / totalRuns) * 100) : 94;
   const maxAgentTok = Math.max(...agentTokens, 1);
-
-  // Dynamic model comparisons
-  const dynamicModelStats = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        provider: string;
-        model: string;
-        runs: number;
-        totalDuration: number;
-        totalTokens: number;
-        totalCost: number;
-        highConf: number;
-      }
-    > = {};
-
-    safeHistory.forEach((r) => {
-      const key = r.model || activeModel;
-      if (!map[key]) {
-        map[key] = {
-          provider: r.provider || activeProvider,
-          model: key,
-          runs: 0,
-          totalDuration: 0,
-          totalTokens: 0,
-          totalCost: 0,
-          highConf: 0
-        };
-      }
-      map[key].runs += 1;
-      map[key].totalDuration += r.durationMs || 0;
-      map[key].totalTokens += r.totalTokens || 0;
-      map[key].totalCost += r.costUSD || 0;
-      if ((r.confidenceScore || 0) >= 0.85) map[key].highConf += 1;
-    });
-
-    return map;
-  }, [safeHistory, activeModel, activeProvider]);
-
-  const baselineBenchmarks = [
-    {
-      name: 'Gemini 3.8 Flash',
-      modelId: 'gemini-3.8-flash',
-      provider: 'gemini',
-      baseLatency: '0.9s',
-      baseCostPer1k: '$0.35'
-    },
-    {
-      name: 'Claude 3.5 Sonnet',
-      modelId: 'claude-3-5-sonnet',
-      provider: 'anthropic',
-      baseLatency: '1.8s',
-      baseCostPer1k: '$3.00'
-    },
-    {
-      name: 'GPT-4o-mini',
-      modelId: 'gpt-4o-mini',
-      provider: 'openai',
-      baseLatency: '1.4s',
-      baseCostPer1k: '$0.60'
-    },
-    {
-      name: 'Local LLM (Ollama)',
-      modelId: 'llama3:latest',
-      provider: 'ollama',
-      baseLatency: '3.8s',
-      baseCostPer1k: '$0.00 (Self-Hosted)'
-    }
-  ];
 
   // Search and filter runs safely
   const filteredRuns = useMemo(() => {
@@ -220,31 +237,28 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         (r.model || '').toLowerCase().includes(q) ||
         (r.category || '').toLowerCase().includes(q) ||
         (r.targetQueue || '').toLowerCase().includes(q) ||
+        (r.datasetName || '').toLowerCase().includes(q) ||
         (r.runId || '').toLowerCase().includes(q);
 
-      const f = selectedModelFilter.toLowerCase();
+      const fModel = selectedModelFilter.toLowerCase();
       const matchModel =
-        f === 'all' ||
-        (r.model || '').toLowerCase().includes(f) ||
-        (r.provider || '').toLowerCase().includes(f);
+        fModel === 'all' ||
+        (r.model || '').toLowerCase().includes(fModel) ||
+        (r.provider || '').toLowerCase().includes(fModel);
 
-      return matchSearch && matchModel;
-    });
-  }, [safeHistory, searchTerm, selectedModelFilter]);
+      const matchDataset =
+        selectedDatasetFilter === 'all' ||
+        (r.datasetName || 'General Queue') === selectedDatasetFilter;
 
-  const uniqueModels = useMemo(() => {
-    const set = new Set<string>();
-    safeHistory.forEach((r) => {
-      if (r.model) set.add(r.model);
+      return matchSearch && matchModel && matchDataset;
     });
-    return Array.from(set);
-  }, [safeHistory]);
+  }, [safeHistory, searchTerm, selectedModelFilter, selectedDatasetFilter]);
 
   const latestRun = safeHistory[0];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
-      {/* Top Banner Card */}
+      {/* Top Banner Card with Telemetry Toggle and Export */}
       <div className="glass-card p-6 rounded-2xl border border-white/80 bg-white/70 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -252,26 +266,56 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               <BarChart3 className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">
                   Pipeline Telemetry & Run Memory
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
                   {safeHistory.length} Recorded Runs
                 </span>
+                {uniqueDatasets.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-violet-100 text-violet-800 flex items-center gap-1">
+                    <Database className="w-3 h-3" />
+                    {uniqueDatasets.length} {uniqueDatasets.length === 1 ? 'Dataset' : 'Datasets'}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-600 mt-0.5 font-medium">
-                Live multi-agent token metrics, cost telemetry, and historical test memory across models
+                Tracks which dataset was processed by each LLM, with live token telemetry and Agent 5 control
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Agent 5 Telemetry Toggle Switch */}
+            {onToggleTelemetry && (
+              <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-bold text-slate-800">Agent 5 Telemetry:</span>
+                <button
+                  type="button"
+                  onClick={onToggleTelemetry}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    telemetryEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                  title="Toggle Agent 5 (Telemetry Agent) ON or OFF to save tokens and latency"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      telemetryEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <span className={`text-[11px] font-bold ${telemetryEnabled ? 'text-emerald-700' : 'text-slate-500'}`}>
+                  {telemetryEnabled ? 'ON' : 'OFF (Bypassed)'}
+                </span>
+              </div>
+            )}
+
             <button
               onClick={() => exportRunsToExcel(safeHistory)}
               disabled={safeHistory.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] active:scale-100 cursor-pointer"
-              title="Download all runs as an Excel (.xlsx) file"
+              title="Download all runs and dataset breakdowns as an Excel (.xlsx) file"
             >
               <Download className="w-4 h-4" />
               <span>Export to .xlsx</span>
@@ -352,9 +396,126 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             {totalRuns > 0 ? `${humanReviewRate}%` : '—'}
           </span>
           <div className="text-[11px] text-slate-600 font-medium pt-2 mt-2 border-t border-slate-100">
-            {threatsCount} Security Alerts flagged
+            {threatsCount} Security Alerts · {bypassedCount} Telemetry Bypassed
           </div>
         </div>
+      </div>
+
+      {/* SECTION 1: DATASET MEMORY MATRIX - Remembers what dataset was processed by each LLM */}
+      <div className="glass-card p-6 rounded-2xl border border-white/80 bg-white/70 shadow-sm backdrop-blur-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-violet-100 text-violet-700">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>Dataset Memory & Multi-LLM Benchmark Matrix</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 font-semibold">
+                  Cross-Model Intelligence
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Remembers and compares which LLM processed each dataset, tracking performance, tokens, and cost side-by-side
+              </p>
+            </div>
+          </div>
+
+          {uniqueDatasets.length > 0 && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500 font-medium">Filter View:</span>
+              <select
+                value={selectedDatasetFilter}
+                onChange={(e) => setSelectedDatasetFilter(e.target.value)}
+                className="py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:border-indigo-500 shadow-2xs"
+              >
+                <option value="all">All Datasets ({uniqueDatasets.length})</option>
+                {uniqueDatasets.map((ds) => (
+                  <option key={ds} value={ds}>
+                    📁 {ds}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {datasetModelBreakdown.length > 0 ? (
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] font-bold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-3.5">Dataset Name</th>
+                  <th className="py-3 px-3.5">LLM Engine</th>
+                  <th className="py-3 px-3.5 text-center">Emails Processed</th>
+                  <th className="py-3 px-3.5">Avg Latency</th>
+                  <th className="py-3 px-3.5 text-right">Avg Tokens / Email</th>
+                  <th className="py-3 px-3.5 text-right">Total Cost</th>
+                  <th className="py-3 px-3.5 text-right">Est. Cost / 1k</th>
+                  <th className="py-3 px-3.5 text-center">Confidence</th>
+                  <th className="py-3 px-3.5 text-center">Threats</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-sans">
+                {datasetModelBreakdown
+                  .filter(
+                    (item) =>
+                      selectedDatasetFilter === 'all' || item.datasetName === selectedDatasetFilter
+                  )
+                  .map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-3.5">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-slate-900">
+                          <Database className="w-3.5 h-3.5 text-violet-600 shrink-0" />
+                          <span>{item.datasetName}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-3.5">
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                          {item.modelKey}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3.5 text-center font-bold text-slate-800">
+                        {item.runs}
+                      </td>
+                      <td className="py-3 px-3.5 font-mono text-[11px] text-slate-700">
+                        {(item.totalDuration / item.runs / 1000).toFixed(2)}s
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-[11px] text-slate-700">
+                        {Math.round(item.totalTokens / item.runs).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-[11px] font-bold text-emerald-700">
+                        {formatUSD(item.totalCost)}
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-[11px] font-bold text-emerald-700">
+                        {formatUSD((item.totalCost / item.runs) * 1000)}
+                      </td>
+                      <td className="py-3 px-3.5 text-center font-semibold text-slate-800">
+                        {Math.round((item.highConfCount / item.runs) * 100)}%
+                      </td>
+                      <td className="py-3 px-3.5 text-center">
+                        {item.threatsCount > 0 ? (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            {item.threatsCount} Flagged
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">None</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-10 text-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 space-y-2">
+            <Database className="w-8 h-8 text-slate-400 mx-auto" />
+            <h4 className="text-xs font-bold text-slate-700">No dataset runs recorded yet</h4>
+            <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+              Run triage on emails from an uploaded CSV/JSON dataset or write test emails with a dataset tag. The answers and metrics from each LLM will be permanently mapped and remembered here.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Two Column Section: Agent Volume Distribution & Model Benchmark */}
@@ -405,84 +566,48 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           </p>
         </div>
 
-        {/* Model Benchmark & Economic Comparison */}
+        {/* Executive Process Advisory & Telemetry Advice */}
         <div className="glass-card p-6 rounded-2xl border border-white/80 bg-white/70 shadow-sm backdrop-blur-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-indigo-600" />
+              <Lightbulb className="w-4 h-4 text-indigo-600" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                Model Benchmark & Economic Comparison
+                Agent 5 Executive Process Advisory
               </h3>
             </div>
             <span className="text-[11px] text-slate-500 font-medium">
-              Active & tested engines
+              {telemetryEnabled ? 'Agent 5 Active' : 'Agent 5 Bypassed'}
             </span>
           </div>
 
-          <div className="overflow-x-auto text-xs">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold">
-                  <th className="pb-2.5">Engine</th>
-                  <th className="pb-2.5">Tested Runs</th>
-                  <th className="pb-2.5">Avg Latency</th>
-                  <th className="pb-2.5">Avg Tokens</th>
-                  <th className="pb-2.5">Cost / 1k msgs</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-800 font-mono text-[11px]">
-                {baselineBenchmarks.map((base) => {
-                  const isCurrent =
-                    activeModel.toLowerCase().includes(base.modelId.toLowerCase()) ||
-                    activeProvider === base.provider;
-                  const stats =
-                    dynamicModelStats[base.modelId] ||
-                    Object.values(dynamicModelStats).find((s) => s.provider === base.provider);
+          {latestRun && (latestRun.businessAdvisory || latestRun.costTip) ? (
+            <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200/80 space-y-2">
+              {latestRun.businessAdvisory && (
+                <p className="text-xs text-slate-800 font-medium leading-relaxed">
+                  {latestRun.businessAdvisory}
+                </p>
+              )}
+              {latestRun.costTip && (
+                <div className="text-[11px] text-indigo-900 pt-2 border-t border-indigo-200 font-mono">
+                  💡 Recommendation: {latestRun.costTip}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <p className="font-semibold text-slate-800">Optimization Telemetry Ready</p>
+              <p>
+                {telemetryEnabled
+                  ? 'Run email triage tests to generate live cost reduction insights and executive process advisories.'
+                  : 'Telemetry Agent is currently toggled OFF to minimize token usage. Turn on Agent 5 in the header to receive live advisories.'}
+              </p>
+            </div>
+          )}
 
-                  const runsCount = stats ? stats.runs : 0;
-                  const avgLatency = stats
-                    ? (stats.totalDuration / stats.runs / 1000).toFixed(2) + 's'
-                    : base.baseLatency;
-                  const avgTokens = stats ? Math.round(stats.totalTokens / stats.runs) : '—';
-                  const costPer1k = stats
-                    ? formatUSD((stats.totalCost / stats.runs) * 1000)
-                    : base.baseCostPer1k;
-
-                  return (
-                    <tr
-                      key={base.name}
-                      className={isCurrent ? 'font-bold text-indigo-800 bg-indigo-50/50' : ''}
-                    >
-                      <td className="py-2.5 flex items-center gap-1.5 font-sans font-semibold">
-                        <span>{base.name}</span>
-                        {isCurrent && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800 font-bold">
-                            Active
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5">
-                        {runsCount > 0 ? (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                            {runsCount} tests
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 font-normal">Benchmark</span>
-                        )}
-                      </td>
-                      <td className="py-2.5">{avgLatency}</td>
-                      <td className="py-2.5">{avgTokens}</td>
-                      <td className="py-2.5 font-bold text-emerald-700">{costPer1k}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
+            <span>Historical Tests: <strong className="text-slate-800">{safeHistory.length}</strong></span>
+            <span>Export format: <strong className="text-emerald-700">Excel (.xlsx)</strong></span>
           </div>
-
-          <p className="text-[11px] text-slate-500 font-medium">
-            Switch provider in the Agents tab to test different LLMs on incoming emails.
-          </p>
         </div>
       </div>
 
@@ -495,22 +620,37 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               <span>Historical Run Memory & Answers (.xlsx Table)</span>
             </h3>
             <p className="text-xs text-slate-500 font-medium">
-              Every triage test and multi-agent answer logged across models, ready for one-click Excel download
+              Every triage test and multi-agent answer logged across models and datasets
             </p>
           </div>
 
           {/* Search & Filter Toolbar */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search runs..."
-                className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-indigo-500 w-40 sm:w-56"
+                placeholder="Search runs, datasets..."
+                className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-indigo-500 w-36 sm:w-48"
               />
             </div>
+
+            {uniqueDatasets.length > 0 && (
+              <select
+                value={selectedDatasetFilter}
+                onChange={(e) => setSelectedDatasetFilter(e.target.value)}
+                className="text-xs py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="all">All Datasets ({uniqueDatasets.length})</option>
+                {uniqueDatasets.map((d) => (
+                  <option key={d} value={d}>
+                    📁 {d}
+                  </option>
+                ))}
+              </select>
+            )}
 
             {uniqueModels.length > 0 && (
               <select
@@ -518,7 +658,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 onChange={(e) => setSelectedModelFilter(e.target.value)}
                 className="text-xs py-1.5 px-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 focus:outline-none focus:border-indigo-500"
               >
-                <option value="all">All Models ({safeHistory.length})</option>
+                <option value="all">All Models ({uniqueModels.length})</option>
                 {uniqueModels.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -536,7 +676,9 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] font-bold border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-3.5">Run ID</th>
+                  <th className="py-3 px-3.5">Dataset</th>
                   <th className="py-3 px-3.5">Model</th>
+                  <th className="py-3 px-3.5">Telemetry</th>
                   <th className="py-3 px-3.5">Subject / Sender</th>
                   <th className="py-3 px-3.5">Security Check</th>
                   <th className="py-3 px-3.5">Category & Intent</th>
@@ -560,11 +702,27 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                       </span>
                     </td>
                     <td className="py-3 px-3.5">
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-violet-50 text-violet-800 border border-violet-200 truncate max-w-[120px]">
+                        📁 {r.datasetName || 'General Queue'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5">
                       <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
                         {r.model}
                       </span>
                     </td>
-                    <td className="py-3 px-3.5 max-w-[200px]">
+                    <td className="py-3 px-3.5">
+                      {r.telemetryEnabled !== false ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Bypassed
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3.5 max-w-[180px]">
                       <span className="font-semibold text-slate-900 block truncate" title={r.subject}>
                         {r.subject}
                       </span>
@@ -626,33 +784,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         ) : (
           <div className="py-14 text-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 space-y-2.5">
             <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto" />
-            <h4 className="text-sm font-bold text-slate-700">No test runs recorded in memory yet</h4>
+            <h4 className="text-sm font-bold text-slate-700">No test runs match selected filters</h4>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Execute email triage tests in the Inbox or Agents tab using different models. Each run will be automatically logged here and ready for one-click Excel (.xlsx) export.
+              Execute email triage tests in the Inbox or Agents tab using different models and datasets. Each run will be logged here and ready for one-click Excel (.xlsx) export.
             </p>
           </div>
         )}
       </div>
-
-      {/* Latest Executive Process Advisory */}
-      {latestRun && (latestRun.businessAdvisory || latestRun.costTip) && (
-        <div className="glass-card p-5 rounded-2xl bg-indigo-50/80 border border-indigo-200/80 space-y-2 backdrop-blur-xl">
-          <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs">
-            <Lightbulb className="w-4 h-4 text-indigo-700" />
-            <span>Agent 5 Executive Process Advisory (Run: {latestRun.runId})</span>
-          </div>
-          {latestRun.businessAdvisory && (
-            <p className="text-xs text-slate-800 font-medium">
-              {latestRun.businessAdvisory}
-            </p>
-          )}
-          {latestRun.costTip && (
-            <div className="text-[11px] text-indigo-900 pt-1 border-t border-indigo-200 font-mono">
-              💡 Cost Tip: {latestRun.costTip}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Modal Inspector for a Selected Historical Run */}
       {inspectingRun && (
@@ -668,7 +806,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                     Run Details & Agent Answers: {inspectingRun.runId}
                   </h3>
                   <p className="text-xs text-slate-500 font-medium">
-                    Tested with {inspectingRun.provider} ({inspectingRun.model}) on {inspectingRun.dateStr}
+                    Dataset: <strong className="text-slate-800">{inspectingRun.datasetName || 'General Queue'}</strong> · Tested with {inspectingRun.provider} ({inspectingRun.model}) on {inspectingRun.dateStr}
                   </p>
                 </div>
               </div>
@@ -680,10 +818,20 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               </button>
             </div>
 
-            {/* Email Subject & Sender */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-              <div className="font-bold text-slate-900">Subject: {inspectingRun.subject}</div>
-              <div className="text-slate-600">From: {inspectingRun.from}</div>
+            {/* Email Subject, Sender, Dataset, Telemetry */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900">Subject: {inspectingRun.subject}</span>
+                <span className="px-2 py-0.5 rounded bg-violet-100 text-violet-800 font-semibold text-[10px]">
+                  📁 {inspectingRun.datasetName || 'General Queue'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-600">
+                <span>From: {inspectingRun.from}</span>
+                <span className="font-mono text-[10px]">
+                  Telemetry Agent: {inspectingRun.telemetryEnabled !== false ? 'Active' : 'Bypassed (Off)'}
+                </span>
+              </div>
             </div>
 
             {/* Agent 1 Answers */}
@@ -758,11 +906,15 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               <div className="text-[11px] text-slate-600 font-mono">
                 Tokens: {(inspectingRun.totalTokens || 0).toLocaleString()} (In: {(inspectingRun.inputTokens || 0).toLocaleString()} | Out: {(inspectingRun.outputTokens || 0).toLocaleString()})
               </div>
-              {inspectingRun.costTip && (
+              {inspectingRun.telemetryEnabled === false ? (
+                <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+                  ℹ️ Telemetry Agent was bypassed during this execution.
+                </div>
+              ) : inspectingRun.costTip ? (
                 <div className="text-[11px] text-slate-700 pt-1 border-t border-slate-200">
                   💡 Tip: {inspectingRun.costTip}
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="flex justify-end pt-2">

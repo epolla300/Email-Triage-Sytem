@@ -733,8 +733,24 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
     // ---------------------------------------------
     const t5 = Date.now();
     const benchmarkCost = (totalInputTokens / 1000) * 0.0005 + (totalOutputTokens / 1000) * 0.0015;
+    const isTelemetryEnabled = activeConfig.enableTelemetry !== false;
 
-    const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for Centelli CommsIQ.
+    let telemetryRes: TelemetryOutput;
+
+    if (!isTelemetryEnabled) {
+      // Telemetry Agent toggled OFF: Bypass LLM inference to save tokens and time
+      stepDurations['agent5_telemetry'] = 0;
+      telemetryRes = {
+        telemetry_summary: {
+          total_input_tokens: totalInputTokens,
+          total_output_tokens: totalOutputTokens,
+          total_pipeline_cost_usd: parseFloat(benchmarkCost.toFixed(6))
+        },
+        cost_optimization_recommendation: 'Telemetry Agent bypassed per user pipeline toggle (zero extra tokens consumed).',
+        business_process_advisory: 'Telemetry Agent disabled. Core 4-agent triage was executed successfully.'
+      };
+    } else {
+      const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for Centelli CommsIQ.
 ROLE: Your role is to analyze pipeline execution metrics, compute transaction token costs, track model performance, and generate executive optimization and process advisory recommendations.
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
 Step 1. Token Usage Computation: Calculate total input and output tokens across all pipeline LLM calls. (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
@@ -759,17 +775,17 @@ Urgency: ${slate.agent2_classifier.urgency}
 Needs Human Review: ${slate.agent2_classifier.needs_human_review}
 Assigned Queue: ${slate.agent3_router.target_queue}`;
 
-    let telemetryRes: TelemetryOutput;
-    try {
-      const res = await callAgent('You are the Token Telemetry & Business Advisory Agent.', prompt5, activeConfig);
-      telemetryRes = res.json as TelemetryOutput;
-    } catch {
-      telemetryRes = deterministicAnalyze(slate.raw_input).telemetry;
-      telemetryRes.telemetry_summary.total_input_tokens = totalInputTokens || telemetryRes.telemetry_summary.total_input_tokens;
-      telemetryRes.telemetry_summary.total_output_tokens = totalOutputTokens || telemetryRes.telemetry_summary.total_output_tokens;
-      telemetryRes.telemetry_summary.total_pipeline_cost_usd = parseFloat(benchmarkCost.toFixed(6)) || telemetryRes.telemetry_summary.total_pipeline_cost_usd;
+      try {
+        const res = await callAgent('You are the Token Telemetry & Business Advisory Agent.', prompt5, activeConfig);
+        telemetryRes = res.json as TelemetryOutput;
+      } catch {
+        telemetryRes = deterministicAnalyze(slate.raw_input).telemetry;
+        telemetryRes.telemetry_summary.total_input_tokens = totalInputTokens || telemetryRes.telemetry_summary.total_input_tokens;
+        telemetryRes.telemetry_summary.total_output_tokens = totalOutputTokens || telemetryRes.telemetry_summary.total_output_tokens;
+        telemetryRes.telemetry_summary.total_pipeline_cost_usd = parseFloat(benchmarkCost.toFixed(6)) || telemetryRes.telemetry_summary.total_pipeline_cost_usd;
+      }
+      stepDurations['agent5_telemetry'] = Date.now() - t5;
     }
-    stepDurations['agent5_telemetry'] = Date.now() - t5;
     slate.agent5_telemetry = telemetryRes;
 
     const totalDuration = Date.now() - startTime;

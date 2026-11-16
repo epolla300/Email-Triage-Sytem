@@ -8,7 +8,8 @@ import {
   ChevronDown,
   ChevronRight,
   BellRing,
-  Database
+  Database,
+  Mail
 } from 'lucide-react';
 import { EmailItem } from '../types/triage';
 
@@ -315,6 +316,23 @@ export const ForwardingTab: React.FC<ForwardingTabProps> = ({
                     )}
                   </div>
                 )}
+
+                {/* Original Email Text */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Original Email Text
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
+                    {selectedEmail.body ? (
+                      selectedEmail.body
+                    ) : (
+                      <span className="italic text-slate-400">(No original email text provided)</span>
+                    )}
+                  </div>
+                </div>
 
                 {/* Agent 4 Reply Drafter Output */}
                 {selectedEmail.slate?.agent4_reply ? (

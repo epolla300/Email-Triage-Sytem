@@ -50,27 +50,46 @@ export default function App() {
   };
 
   // Add custom email from compose modal
-  const handleAddEmail = (data: { from: string; subject: string; body: string }) => {
+  const handleAddEmail = (data: { from: string; subject: string; body: string; datasetName?: string }) => {
+    const ds = data.datasetName || 'Manual QA Suite';
     const newEmail: EmailItem = {
       id: Math.random().toString(36).slice(2, 10),
       from: data.from,
       subject: data.subject,
       body: data.body,
+      datasetName: ds,
       receivedAt: Date.now(),
       status: 'Pending'
     };
     setEmails((prev) => [newEmail, ...prev]);
     setSelectedEmailId(newEmail.id);
-    addFeedEvent('System', `New incoming payload queued from ${data.from}: "${data.subject}"`, 'info');
+    addFeedEvent('System', `New incoming payload queued from ${data.from}: "${data.subject}" [Dataset: ${ds}]`, 'info');
   };
 
-  // Process a single email through the 5-agent pipeline
+  // Toggle Telemetry Agent (Agent 5) ON / OFF
+  const handleToggleTelemetry = () => {
+    setLLMConfig((prev) => {
+      const next = prev.enableTelemetry === false ? true : false;
+      addFeedEvent(
+        'Pipeline Config',
+        `Agent 5 (Token Telemetry & Advisory Agent) is now ${next ? 'ACTIVATED' : 'BYPASSED / OFF'}`,
+        next ? 'success' : 'warn'
+      );
+      return {
+        ...prev,
+        enableTelemetry: next
+      };
+    });
+  };
+
+  // Process a single email through the pipeline
   const handleProcessSingle = async (emailId: string) => {
     const target = emails.find((e) => e.id === emailId);
     if (!target) return;
 
+    const isTelemetryActive = llmConfig.enableTelemetry !== false;
     setIsProcessing(true);
-    addFeedEvent('Pipeline', `Starting 5-agent triage for: "${target.subject}" using ${llmConfig.provider} (${llmConfig.model})`, 'info');
+    addFeedEvent('Pipeline', `Starting triage for: "${target.subject}" [Dataset: ${target.datasetName || 'General Queue'}] using ${llmConfig.provider} (${llmConfig.model})${!isTelemetryActive ? ' · Telemetry Agent Bypassed' : ''}`, 'info');
 
     // Mark email as processing
     setEmails((prev) =>
@@ -78,15 +97,16 @@ export default function App() {
     );
 
     // Simulate animated step transitions for live visual feedback
-    const stepDelays = [200, 400, 600, 800];
-    for (let i = 0; i < 4; i++) {
+    const stepDelays = [200, 350, 500, 650];
+    const stepsToAnimate = isTelemetryActive ? 4 : 3;
+    for (let i = 0; i < stepsToAnimate; i++) {
       setActiveAgentIndex(i);
       setEmails((prev) =>
         prev.map((e) => (e.id === emailId ? { ...e, activeStepIndex: i } : e))
       );
       await new Promise((r) => setTimeout(r, stepDelays[i]));
     }
-    setActiveAgentIndex(4);
+    setActiveAgentIndex(isTelemetryActive ? 4 : 3);
 
     try {
       const response = await fetch('/api/triage/single', {
@@ -141,11 +161,19 @@ export default function App() {
           'info'
         );
 
-        addFeedEvent(
-          'Agent 5: Telemetry',
-          `Consumed ${slate.agent5_telemetry?.telemetry_summary.total_input_tokens} in / ${slate.agent5_telemetry?.telemetry_summary.total_output_tokens} out tokens. Cost: $${slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd}`,
-          'success'
-        );
+        if (isTelemetryActive) {
+          addFeedEvent(
+            'Agent 5: Telemetry',
+            `Consumed ${slate.agent5_telemetry?.telemetry_summary.total_input_tokens} in / ${slate.agent5_telemetry?.telemetry_summary.total_output_tokens} out tokens. Cost: $${slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd}`,
+            'success'
+          );
+        } else {
+          addFeedEvent(
+            'Agent 5: Telemetry',
+            `Telemetry Agent BYPASSED (toggled OFF). Cumulative computed cost: $${slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd}`,
+            'info'
+          );
+        }
 
         // Record run in memory & spreadsheet history
         const inTok = slate.agent5_telemetry?.telemetry_summary.total_input_tokens ?? 0;
@@ -156,6 +184,8 @@ export default function App() {
           runId: `RUN-${Date.now().toString(36).toUpperCase()}`,
           timestamp: Date.now(),
           dateStr: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }),
+          datasetName: target.datasetName || 'General Queue',
+          telemetryEnabled: isTelemetryActive,
           emailId: emailId,
           from: target.from,
           subject: target.subject,
@@ -307,6 +337,7 @@ export default function App() {
           from: item.from || 'imported@client.com',
           subject: item.subject || '(Imported Subject)',
           body: item.body || '',
+          datasetName: file.name,
           receivedAt: Date.now(),
           status: 'Pending'
         }));
@@ -384,6 +415,8 @@ export default function App() {
             onClearHistory={handleClearHistory}
             activeProvider={llmConfig.provider}
             activeModel={llmConfig.model}
+            telemetryEnabled={llmConfig.enableTelemetry !== false}
+            onToggleTelemetry={handleToggleTelemetry}
           />
         )}
       </main>
