@@ -213,11 +213,17 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
     if ((r.confidenceScore || 0) >= 0.85) highConfCount++;
     if (r.telemetryEnabled === false) bypassedCount++;
 
-    agentTokens[0] += Math.floor(inT * 0.22);
-    agentTokens[1] += Math.floor(inT * 0.28);
-    agentTokens[2] += Math.floor(inT * 0.18);
-    agentTokens[3] += Math.floor(inT * 0.24);
-    agentTokens[4] += r.telemetryEnabled === false ? 0 : Math.floor(inT * 0.08);
+    // Agents 1 & 2 run deterministically in code (0 LLM tokens)
+    agentTokens[0] += 0;
+    agentTokens[1] += 0;
+    if (r.telemetryEnabled === false) {
+      agentTokens[2] += Math.floor(inT * 0.42);
+      agentTokens[3] += Math.floor(inT * 0.58);
+    } else {
+      agentTokens[2] += Math.floor(inT * 0.36);
+      agentTokens[3] += Math.floor(inT * 0.48);
+      agentTokens[4] += Math.floor(inT * 0.16);
+    }
   });
 
   const totalTokens = totalInputTokens + totalOutputTokens;
@@ -536,22 +542,26 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 
           <div className="h-40 flex items-end gap-3 pt-8 pb-3 px-2 border-b border-slate-200">
             {[
-              { name: '1. Sanitizer', val: agentTokens[0] },
-              { name: '2. Classifier', val: agentTokens[1] },
-              { name: '3. Router', val: agentTokens[2] },
-              { name: '4. Drafter', val: agentTokens[3] },
-              { name: '5. Telemetry', val: agentTokens[4] }
+              { name: '1. Sanitizer', val: agentTokens[0], isCode: true },
+              { name: '2. Classifier', val: agentTokens[1], isCode: true },
+              { name: '3. Router', val: agentTokens[2], isCode: false },
+              { name: '4. Drafter', val: agentTokens[3], isCode: false },
+              { name: '5. Telemetry', val: agentTokens[4], isCode: false }
             ].map((agent) => {
-              const pct = Math.max(14, Math.round((agent.val / maxAgentTok) * 100));
+              const pct = agent.isCode ? 6 : Math.max(14, Math.round((agent.val / maxAgentTok) * 100));
 
               return (
                 <div key={agent.name} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-                  <span className="text-[10px] font-mono text-indigo-700 font-bold">
-                    {agent.val > 0 ? agent.val.toLocaleString() : '—'}
+                  <span className={`text-[10px] font-mono font-bold ${agent.isCode ? 'text-cyan-700' : 'text-indigo-700'}`}>
+                    {agent.isCode ? '0 (Code)' : agent.val > 0 ? agent.val.toLocaleString() : '—'}
                   </span>
                   <div
                     style={{ height: `${pct}%` }}
-                    className="w-full rounded-t-xl bg-gradient-to-t from-indigo-600 to-violet-500 transition-all duration-300 shadow-sm"
+                    className={`w-full rounded-t-xl transition-all duration-300 shadow-sm ${
+                      agent.isCode
+                        ? 'bg-cyan-200 border border-dashed border-cyan-400'
+                        : 'bg-gradient-to-t from-indigo-600 to-violet-500'
+                    }`}
                   />
                   <span className="text-[10px] font-bold text-slate-700 truncate max-w-full text-center">
                     {agent.name}

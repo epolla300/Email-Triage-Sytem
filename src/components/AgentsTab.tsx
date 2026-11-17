@@ -127,7 +127,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
           Agent Blackboard Pipeline
         </h2>
         <p className="text-xs text-slate-600 font-medium">
-          5-stage sequential slate architecture. Switch model providers live to benchmark performance, accuracy, and token economics.
+          Hybrid 5-stage slate pipeline: Agents 1–2 execute deterministically in code (0 tokens); Agents 3–5 run on your configured LLM.
         </p>
       </div>
 
@@ -302,12 +302,22 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {AGENT_DEFINITIONS.map((agent, index) => {
             const isTelemetryAgent = agent.id === 5;
+            const isCodeAgent = agent.executionMode === 'code';
             const isTelemetryBypassed = isTelemetryAgent && llmConfig.enableTelemetry === false;
             const isCurrent = isProcessing && activeAgentIndex === index;
             const output = getAgentOutput(agent.id);
             const isDone = Boolean(output);
             const isExpanded = expandedAgentId === agent.id;
             const isAgent1Threat = agent.id === 1 && slate?.agent1_sanitizer?.is_safe === false;
+
+            const stepDurationKeyMap: Record<number, string> = {
+              1: 'agent1_sanitizer',
+              2: 'agent2_classifier',
+              3: 'agent3_router',
+              4: 'agent4_reply',
+              5: 'agent5_telemetry'
+            };
+            const stepMs = slate?.execution_meta?.stepDurationsMs?.[stepDurationKeyMap[agent.id]];
 
             return (
               <div
@@ -324,9 +334,21 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                 <div>
                   {/* Status header */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                      STEP {agent.id}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                        STEP {agent.id}
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                          isCodeAgent
+                            ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                            : 'bg-violet-50 text-violet-700 border-violet-200'
+                        }`}
+                        title={isCodeAgent ? 'Runs deterministically in code (0 LLM tokens)' : 'Powered by configured LLM'}
+                      >
+                        {isCodeAgent ? 'Code' : 'LLM'}
+                      </span>
+                    </div>
 
                     {isTelemetryBypassed ? (
                       <span className="text-[10px] font-bold text-slate-500 px-1.5 py-0.5 rounded bg-slate-200/80">
@@ -387,8 +409,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                   <span>
                     {isTelemetryBypassed
                       ? 'Skipped (0ms)'
-                      : slate?.execution_meta?.stepDurationsMs?.[`agent${agent.id}`]
-                      ? `${slate.execution_meta.stepDurationsMs[`agent${agent.id}`]}ms`
+                      : stepMs !== undefined
+                      ? `${stepMs < 1 ? '<1' : stepMs}ms`
+                      : isCodeAgent
+                      ? '~1ms (0 tok)'
                       : 'avg ~0.9s'}
                   </span>
                   <span className="text-indigo-700 font-semibold">
@@ -455,7 +479,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      System Prompt & Rules
+                      {currentAgent.executionMode === 'code' ? 'Code Rules & Logic' : 'System Prompt & Rules'}
                     </button>
                   </div>
                 </div>

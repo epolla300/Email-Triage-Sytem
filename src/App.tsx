@@ -96,8 +96,8 @@ export default function App() {
       prev.map((e) => (e.id === emailId ? { ...e, status: 'Processing', activeStepIndex: 0 } : e))
     );
 
-    // Simulate animated step transitions for live visual feedback
-    const stepDelays = [200, 350, 500, 650];
+    // Simulate animated step transitions for live visual feedback (Agents 1-2 run instantaneously in code)
+    const stepDelays = [90, 90, 350, 450];
     const stepsToAnimate = isTelemetryActive ? 4 : 3;
     for (let i = 0; i < stepsToAnimate; i++) {
       setActiveAgentIndex(i);
@@ -132,20 +132,20 @@ export default function App() {
         if (!isSafe) {
           addFeedEvent(
             'Agent 1: Sanitizer',
-            `SECURITY ALERT: ${slate.agent1_sanitizer?.security_flag} detected! Payload quarantined.`,
+            `[Code Engine · 0 tokens] SECURITY ALERT: ${slate.agent1_sanitizer?.security_flag} detected! Payload quarantined.`,
             'threat'
           );
         } else {
           addFeedEvent(
             'Agent 1: Sanitizer',
-            `Clean payload. PII scrubbed: ${slate.agent1_sanitizer?.pii_redacted ? 'Yes' : 'None detected'}`,
+            `[Code Engine · 0 tokens] Clean payload. PII scrubbed: ${slate.agent1_sanitizer?.pii_redacted ? 'Yes' : 'None detected'}`,
             'success'
           );
         }
 
         addFeedEvent(
           'Agent 2: Classifier',
-          `Category: "${slate.agent2_classifier?.category}" · Intent: "${slate.agent2_classifier?.intent}" (Urgency ${slate.agent2_classifier?.urgency}/5)`,
+          `[Code Engine · 0 tokens] Category: "${slate.agent2_classifier?.category}" · Intent: "${slate.agent2_classifier?.intent}" (Urgency ${slate.agent2_classifier?.urgency}/5)`,
           'info'
         );
 

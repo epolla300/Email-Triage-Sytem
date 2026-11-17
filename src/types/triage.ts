@@ -125,6 +125,7 @@ export interface PipelineAgentDef {
   title: string;
   role: string;
   description: string;
+  executionMode?: 'code' | 'llm';
   promptInstructions: string;
   expectedOutputKeys: string[];
 }
