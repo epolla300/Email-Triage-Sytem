@@ -1011,18 +1011,14 @@ ROLE: Your role is to analyze pipeline execution metrics, compute transaction to
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
 Step 1. Token Usage Computation: Note that Agent 1 (Sanitizer) and Agent 2 (Classifier) execute deterministically in code (0 LLM tokens). Total LLM input/output tokens from Agents 3-4: (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
 Step 2. Financial Cost Calculation: Compute total USD cost per transaction using benchmark enterprise API pricing ($0.0005 / 1k input tokens, $0.0015 / 1k output tokens). Baseline cost: $${benchmarkCost.toFixed(6)}.
-Step 3. Optimization Advisory: Identify opportunities to further reduce LLM overhead (e.g., routing simple requests to deterministic rules, skipping LLM reply drafts for spam/quarantine).
-Step 4. Strategic Business Impact: Assess workflow efficiency and recommend operational improvements (e.g., staffing re-allocation, SLA bottleneck fixes).
-CONSTRAINTS: Focus exclusively on computational cost, system telemetry, and business process performance. Do not alter routing outcomes or draft text on the Blackboard Slate.
+CONSTRAINTS: Focus exclusively on computational cost, system telemetry. Do not alter routing outcomes or draft text on the Blackboard Slate.
 OUTPUT FORMAT: Return a strict JSON object following this format:
 {
   "telemetry_summary": {
     "total_input_tokens": ${totalInputTokens},
     "total_output_tokens": ${totalOutputTokens},
     "total_pipeline_cost_usd": ${parseFloat(benchmarkCost.toFixed(6))}
-  },
-  "cost_optimization_recommendation": "string",
-  "business_process_advisory": "string"
+  }
 }
 
 BLACKBOARD SLATE TRANSACTION SUMMARY:
