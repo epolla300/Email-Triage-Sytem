@@ -455,7 +455,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       onClick={() => setActiveSubTab('output')}
                       className={`px-3 py-1 rounded-full font-bold transition-all cursor-pointer ${
                         activeSubTab === 'output'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-[0_2px_8px_-1px_rgba(79,70,229,0.18),0_1px_2px_rgba(15,23,42,0.08)]'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
@@ -465,7 +465,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       onClick={() => setActiveSubTab('input')}
                       className={`px-3 py-1 rounded-full font-bold transition-all cursor-pointer ${
                         activeSubTab === 'input'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-[0_2px_8px_-1px_rgba(79,70,229,0.18),0_1px_2px_rgba(15,23,42,0.08)]'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
@@ -475,7 +475,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
                       onClick={() => setActiveSubTab('prompt')}
                       className={`px-3 py-1 rounded-full font-bold transition-all cursor-pointer ${
                         activeSubTab === 'prompt'
-                          ? 'bg-white text-indigo-700 shadow-xs'
+                          ? 'bg-white text-indigo-700 shadow-[0_2px_8px_-1px_rgba(79,70,229,0.18),0_1px_2px_rgba(15,23,42,0.08)]'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >

@@ -22,25 +22,13 @@ export const Header: React.FC<HeaderProps> = ({
   isProcessing
 }) => {
   return (
-    <header className="sticky top-0 z-30 px-4 md:px-8 py-3.5 bg-transparent border-0 pointer-events-none transition-colors">
+    <header className="sticky top-0 z-30 w-full px-4 md:px-8 py-3.5 bg-white/35 backdrop-blur-xl border-b border-white/60 shadow-[0_8px_30px_-12px_rgba(79,70,229,0.12)] transition-colors">
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 items-center gap-3">
-        {/* Top Left: Analytics & Model Pill */}
+        {/* Top Left: Model Pill */}
         <div className="pointer-events-auto flex items-center gap-2.5 justify-start">
           <button
-            onClick={() => setActiveTab('analytics')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all hover:scale-[1.02] active:scale-100 cursor-pointer ${
-              activeTab === 'analytics'
-                ? 'bg-gradient-to-r from-indigo-700 to-violet-700 text-white shadow-md shadow-indigo-500/25 ring-2 ring-indigo-400/50'
-                : 'text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-500/20'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>Analytics</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('agents')}
-            className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/70 border border-white/80 text-slate-800 shadow-sm backdrop-blur-xl hover:border-indigo-400 transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/70 border border-white/80 text-slate-800 shadow-sm backdrop-blur-xl hover:border-indigo-400 transition-colors cursor-pointer"
             title="Active Model - Click to configure"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -57,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('inbox')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'inbox'
-                ? 'bg-white text-indigo-700 shadow-sm'
+                ? 'bg-white text-indigo-700 shadow-[0_3px_10px_-2px_rgba(79,70,229,0.22),0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-indigo-500/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -74,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('agents')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all relative cursor-pointer ${
               activeTab === 'agents'
-                ? 'bg-white text-indigo-700 shadow-sm'
+                ? 'bg-white text-indigo-700 shadow-[0_3px_10px_-2px_rgba(79,70,229,0.22),0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-indigo-500/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -89,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('forwarding')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'forwarding'
-                ? 'bg-white text-indigo-700 shadow-sm'
+                ? 'bg-white text-indigo-700 shadow-[0_3px_10px_-2px_rgba(79,70,229,0.22),0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-indigo-500/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -106,7 +94,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('analytics')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold transition-all cursor-pointer ${
               activeTab === 'analytics'
-                ? 'bg-white text-indigo-700 shadow-sm'
+                ? 'bg-white text-indigo-700 shadow-[0_3px_10px_-2px_rgba(79,70,229,0.22),0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-indigo-500/10'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -115,10 +103,10 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Top Right: Centelli CommsIQ as the ONLY text with a pill background */}
+        {/* Top Right: AI Email Triage as the ONLY text with a pill background */}
         <div className="pointer-events-auto flex items-center justify-end">
           <span className="bp">
-            Centelli CommsIQ
+            AI Email Triage
           </span>
         </div>
       </div>

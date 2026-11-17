@@ -5,7 +5,7 @@ import { TriageRunRecord } from '../types/triage';
  * Exports historical triage runs to a formatted .xlsx workbook with multiple sheets
  * including dataset tracking and model comparisons per dataset.
  */
-export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_CommsIQ_Triage_Runs.xlsx') {
+export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'AI_Email_Triage_Runs.xlsx') {
   if (!runs || runs.length === 0) {
     alert('No run history available to export yet. Execute triage on an email first.');
     return;
@@ -41,7 +41,7 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     'Input Tokens': r.inputTokens || 0,
     'Output Tokens': r.outputTokens || 0,
     'Total Tokens': r.totalTokens || 0,
-    'Calculated Cost ($USD)': Number((r.costUSD ?? 0).toFixed(5)),
+    'Calculated Cost ($USD)': Number((r.provider === 'custom' ? 0 : (r.costUSD ?? 0)).toFixed(5)),
     'Account ID': r.extractedMetadata?.account_id || '',
     'Requested Dates': r.extractedMetadata?.requested_dates || '',
     'Party Size': r.extractedMetadata?.party_size || '',
@@ -111,7 +111,7 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     ms.totalInputTokens += r.inputTokens || 0;
     ms.totalOutputTokens += r.outputTokens || 0;
     ms.totalTokens += r.totalTokens || 0;
-    ms.totalCost += r.costUSD || 0;
+    ms.totalCost += r.provider === 'custom' ? 0 : (r.costUSD || 0);
     if (!r.isSafe) ms.threats += 1;
     if (r.needsHumanReview) ms.humanReviews += 1;
     if ((r.confidenceScore ?? 0) >= 0.85) ms.highConfidence += 1;
@@ -138,7 +138,7 @@ export function exportRunsToExcel(runs: TriageRunRecord[], filename = 'Centelli_
     dms.totalInputTokens += r.inputTokens || 0;
     dms.totalOutputTokens += r.outputTokens || 0;
     dms.totalTokens += r.totalTokens || 0;
-    dms.totalCost += r.costUSD || 0;
+    dms.totalCost += r.provider === 'custom' ? 0 : (r.costUSD || 0);
     if (!r.isSafe) dms.threats += 1;
     if (r.needsHumanReview) dms.humanReviews += 1;
     if ((r.confidenceScore ?? 0) >= 0.85) dms.highConfidence += 1;

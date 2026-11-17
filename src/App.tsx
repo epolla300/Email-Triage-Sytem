@@ -178,7 +178,11 @@ export default function App() {
         // Record run in memory & spreadsheet history
         const inTok = slate.agent5_telemetry?.telemetry_summary.total_input_tokens ?? 0;
         const outTok = slate.agent5_telemetry?.telemetry_summary.total_output_tokens ?? 0;
-        const calcCost = slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd ?? ((inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015);
+        const calcCost =
+          llmConfig.provider === 'custom'
+            ? 0
+            : slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd ??
+              ((inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015);
 
         const newRunRecord: TriageRunRecord = {
           runId: `RUN-${Date.now().toString(36).toUpperCase()}`,

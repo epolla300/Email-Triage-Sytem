@@ -121,7 +121,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
       item.runs += 1;
       item.totalDuration += r.durationMs || 0;
       item.totalTokens += r.totalTokens || 0;
-      item.totalCost += r.costUSD || 0;
+      item.totalCost += r.provider === 'custom' ? 0 : (r.costUSD || 0);
       if (r.telemetryEnabled === false) item.telemetryBypassedCount += 1;
       if ((r.confidenceScore || 0) >= 0.85) item.highConfCount += 1;
       if (r.needsHumanReview) item.humanReviewCount += 1;
@@ -140,8 +140,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
       const inTok = s?.agent5_telemetry?.telemetry_summary?.total_input_tokens || 480;
       const outTok = s?.agent5_telemetry?.telemetry_summary?.total_output_tokens || 180;
       const cost =
-        s?.agent5_telemetry?.telemetry_summary?.total_pipeline_cost_usd ||
-        (inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015;
+        activeProvider === 'custom'
+          ? 0
+          : s?.agent5_telemetry?.telemetry_summary?.total_pipeline_cost_usd ??
+            (inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015;
 
       return {
         runId: `SES-${idx + 1}`,
@@ -206,7 +208,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
     const outT = r.outputTokens || 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
-    totalCostUSD += r.costUSD || 0;
+    totalCostUSD += r.provider === 'custom' ? 0 : (r.costUSD || 0);
 
     if (!r.isSafe) threatsCount++;
     if (r.needsHumanReview) reviewCount++;
@@ -572,7 +574,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           </div>
 
           <p className="text-[11px] text-slate-500 font-medium">
-            Benchmark: $0.0005 per 1,000 input tokens, $0.0015 per 1,000 output tokens.
+            Benchmark: $0.0005 per 1,000 input tokens, $0.0015 per 1,000 output tokens ($0.00 for Custom LLMs).
           </p>
         </div>
 
@@ -771,7 +773,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                       </span>
                     </td>
                     <td className="py-3 px-3.5 text-right font-mono text-[11px] font-bold text-emerald-700">
-                      {formatUSD(r.costUSD)}
+                      {formatUSD(r.provider === 'custom' ? 0 : r.costUSD)}
                     </td>
                     <td className="py-3 px-3.5 text-center">
                       <button
@@ -911,7 +913,9 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             <div className="p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs bg-slate-50">
               <div className="flex items-center justify-between font-bold text-slate-800">
                 <span>Agent 5: Telemetry Summary</span>
-                <span className="text-emerald-700 font-mono font-bold">{formatUSD(inspectingRun.costUSD)}</span>
+                <span className="text-emerald-700 font-mono font-bold">
+                  {formatUSD(inspectingRun.provider === 'custom' ? 0 : inspectingRun.costUSD)}
+                </span>
               </div>
               <div className="text-[11px] text-slate-600 font-mono">
                 Tokens: {(inspectingRun.totalTokens || 0).toLocaleString()} (In: {(inspectingRun.inputTokens || 0).toLocaleString()} | Out: {(inspectingRun.outputTokens || 0).toLocaleString()})

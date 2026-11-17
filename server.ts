@@ -907,7 +907,7 @@ app.post('/api/triage/single', async (req: Request, res: Response) => {
     // Agent 3: Router & Action Agent
     // ---------------------------------------------
     const t3 = Date.now();
-    const prompt3 = `TITLE: You are the Router & Action Agent for Centelli CommsIQ.
+    const prompt3 = `TITLE: You are the Router & Action Agent for AI Email Triage.
 ROLE: Your role is to evaluate classification metadata on the Blackboard Slate and determine optimal queue placement, team assignment, priority tagging, and alert recommendations.
 TASKS: Using the classification slate inputs, compute the operational routing decision:
 Step 1. Destination Queue Assignment: Determine target queue (e.g., Sales_Gold_Queue, Support_Tier2_Escalation, Finance_AP, Human_Triage_Queue).
@@ -934,7 +934,7 @@ ${JSON.stringify(slate.agent2_classifier, null, 2)}`;
 
     let routerRes: RouterOutput;
     try {
-      const res = await callAgent('You are the Router & Action Agent for Centelli CommsIQ.', prompt3, activeConfig);
+      const res = await callAgent('You are the Router & Action Agent for AI Email Triage.', prompt3, activeConfig);
       totalInputTokens += res.inputTokens;
       totalOutputTokens += res.outputTokens;
       routerRes = res.json as RouterOutput;
@@ -948,7 +948,7 @@ ${JSON.stringify(slate.agent2_classifier, null, 2)}`;
     // Agent 4: Reply Drafter Agent
     // ---------------------------------------------
     const t4 = Date.now();
-    const prompt4 = `TITLE: You are the Reply Drafter Agent for Centelli CommsIQ.
+    const prompt4 = `TITLE: You are the Reply Drafter Agent for AI Email Triage.
 ROLE: Your role is to draft clear, professional, contextually appropriate response emails using classification metadata, sanitized bodies, and verified company policy guidelines.
 TASKS: For emails flagged for automated response or pre-drafting, perform the following:
 Step 1. Intent & Context Review: Inspect sanitized body text and extracted metadata (e.g., requested dates, account IDs).
@@ -974,7 +974,7 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
 
     let replyRes: ReplyDrafterOutput;
     try {
-      const res = await callAgent('You are the Reply Drafter Agent for Centelli CommsIQ.', prompt4, activeConfig);
+      const res = await callAgent('You are the Reply Drafter Agent for AI Email Triage.', prompt4, activeConfig);
       totalInputTokens += res.inputTokens;
       totalOutputTokens += res.outputTokens;
       replyRes = res.json as ReplyDrafterOutput;
@@ -988,7 +988,10 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
     // Agent 5: Token Telemetry & Business Advisory Agent
     // ---------------------------------------------
     const t5 = Date.now();
-    const benchmarkCost = (totalInputTokens / 1000) * 0.0005 + (totalOutputTokens / 1000) * 0.0015;
+    const isCustomProvider = activeConfig.provider === 'custom';
+    const benchmarkCost = isCustomProvider
+      ? 0
+      : (totalInputTokens / 1000) * 0.0005 + (totalOutputTokens / 1000) * 0.0015;
     const isTelemetryEnabled = activeConfig.enableTelemetry !== false;
 
     let telemetryRes: TelemetryOutput;
@@ -1006,11 +1009,15 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
         business_process_advisory: 'Telemetry Agent disabled. Core 4-agent triage was executed successfully.'
       };
     } else {
-      const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for Centelli CommsIQ.
+      const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for AI Email Triage.
 ROLE: Your role is to analyze pipeline execution metrics, compute transaction token costs, track model performance, and generate executive optimization and process advisory recommendations.
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
 Step 1. Token Usage Computation: Note that Agent 1 (Sanitizer) and Agent 2 (Classifier) execute deterministically in code (0 LLM tokens). Total LLM input/output tokens from Agents 3-4: (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
-Step 2. Financial Cost Calculation: Compute total USD cost per transaction using benchmark enterprise API pricing ($0.0005 / 1k input tokens, $0.0015 / 1k output tokens). Baseline cost: $${benchmarkCost.toFixed(6)}.
+Step 2. Financial Cost Calculation: ${
+        isCustomProvider
+          ? 'Custom LLM Gateway pricing is $0.00 / 1k tokens. Total pipeline cost: $0.'
+          : `Compute total USD cost per transaction using benchmark enterprise API pricing ($0.0005 / 1k input tokens, $0.0015 / 1k output tokens). Baseline cost: $${benchmarkCost.toFixed(6)}.`
+      }
 CONSTRAINTS: Focus exclusively on computational cost, system telemetry. Do not alter routing outcomes or draft text on the Blackboard Slate.
 OUTPUT FORMAT: Return a strict JSON object following this format:
 {
@@ -1030,11 +1037,16 @@ Assigned Queue: ${slate.agent3_router.target_queue}`;
       try {
         const res = await callAgent('You are the Token Telemetry & Business Advisory Agent.', prompt5, activeConfig);
         telemetryRes = res.json as TelemetryOutput;
+        if (isCustomProvider && telemetryRes?.telemetry_summary) {
+          telemetryRes.telemetry_summary.total_pipeline_cost_usd = 0;
+        }
       } catch {
         telemetryRes = deterministicAnalyze(slate.raw_input).telemetry;
         telemetryRes.telemetry_summary.total_input_tokens = totalInputTokens || telemetryRes.telemetry_summary.total_input_tokens;
         telemetryRes.telemetry_summary.total_output_tokens = totalOutputTokens || telemetryRes.telemetry_summary.total_output_tokens;
-        telemetryRes.telemetry_summary.total_pipeline_cost_usd = parseFloat(benchmarkCost.toFixed(6)) || telemetryRes.telemetry_summary.total_pipeline_cost_usd;
+        telemetryRes.telemetry_summary.total_pipeline_cost_usd = isCustomProvider
+          ? 0
+          : parseFloat(benchmarkCost.toFixed(6)) || telemetryRes.telemetry_summary.total_pipeline_cost_usd;
       }
       stepDurations['agent5_telemetry'] = Date.now() - t5;
     }
@@ -1121,7 +1133,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Centelli CommsIQ] Server running on http://0.0.0.0:${PORT} in ${isProd ? 'production' : 'development'} mode.`);
+    console.log(`[AI Email Triage] Server running on http://0.0.0.0:${PORT} in ${isProd ? 'production' : 'development'} mode.`);
   });
 }
 

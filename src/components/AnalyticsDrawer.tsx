@@ -54,8 +54,10 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
     const inTok = s?.agent5_telemetry?.telemetry_summary?.total_input_tokens || 480;
     const outTok = s?.agent5_telemetry?.telemetry_summary?.total_output_tokens || 180;
     const cost =
-      s?.agent5_telemetry?.telemetry_summary?.total_pipeline_cost_usd ||
-      (inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015;
+      activeProvider === 'custom'
+        ? 0
+        : s?.agent5_telemetry?.telemetry_summary?.total_pipeline_cost_usd ??
+          (inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015;
 
     return {
       runId: `SES-${idx + 1}`,
@@ -116,7 +118,7 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
     const outT = r.outputTokens || 0;
     totalInputTokens += inT;
     totalOutputTokens += outT;
-    totalCostUSD += r.costUSD || 0;
+    totalCostUSD += r.provider === 'custom' ? 0 : (r.costUSD || 0);
 
     if (!r.isSafe) threatsCount++;
     if (r.needsHumanReview) reviewCount++;
@@ -171,7 +173,7 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
       map[key].runs += 1;
       map[key].totalDuration += r.durationMs || 0;
       map[key].totalTokens += r.totalTokens || 0;
-      map[key].totalCost += r.costUSD || 0;
+      map[key].totalCost += r.provider === 'custom' ? 0 : (r.costUSD || 0);
       if ((r.confidenceScore || 0) >= 0.85) map[key].highConf += 1;
     });
 
@@ -522,7 +524,7 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-[11px] font-bold text-emerald-700">
-                          {formatUSD(r.costUSD)}
+                          {formatUSD(r.provider === 'custom' ? 0 : r.costUSD)}
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <button
@@ -745,7 +747,9 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
                 <div className="p-3 rounded-xl border border-slate-200 space-y-1.5 text-xs bg-slate-50">
                   <div className="flex items-center justify-between font-bold text-slate-800">
                     <span>Agent 5: Telemetry Summary</span>
-                    <span className="text-emerald-700 font-mono">{formatUSD(inspectingRun.costUSD)}</span>
+                    <span className="text-emerald-700 font-mono">
+                      {formatUSD(inspectingRun.provider === 'custom' ? 0 : inspectingRun.costUSD)}
+                    </span>
                   </div>
                   <div className="text-[11px] text-slate-600 font-mono">
                     Tokens: {(inspectingRun.totalTokens || 0).toLocaleString()} (In: {(inspectingRun.inputTokens || 0).toLocaleString()} | Out: {(inspectingRun.outputTokens || 0).toLocaleString()})

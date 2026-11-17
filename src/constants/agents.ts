@@ -42,11 +42,11 @@ Step 5. Confidence & Human Review Flagging: Computes confidence_score (0.00-1.00
   {
     id: 3,
     name: 'Router & Action',
-    title: 'Router & Action Agent for Centelli CommsIQ',
+    title: 'Router & Action Agent for AI Email Triage',
     role: 'Evaluate classification metadata on the Blackboard Slate and determine optimal queue placement, team assignment, priority tagging, and alert recommendations.',
     description: 'Target queue assignment, operational priority tag, VIP notifications, and CRM actions.',
     executionMode: 'llm',
-    promptInstructions: `TITLE: You are the Router & Action Agent for Centelli CommsIQ.
+    promptInstructions: `TITLE: You are the Router & Action Agent for AI Email Triage.
 ROLE: Your role is to evaluate classification metadata on the Blackboard Slate and determine optimal queue placement, team assignment, priority tagging, and alert recommendations.
 TASKS: Using the classification slate inputs, compute the operational routing decision:
 Step 1. Destination Queue Assignment: Determine target queue (e.g., Sales_Gold_Queue, Support_Tier2_Escalation, Finance_AP, Human_Triage_Queue, Operations_Queue, Quarantine_Queue).
@@ -69,11 +69,11 @@ OUTPUT FORMAT: Return a strict JSON object following this format:
   {
     id: 4,
     name: 'Reply Drafter',
-    title: 'Reply Drafter Agent for Centelli CommsIQ',
+    title: 'Reply Drafter Agent for AI Email Triage',
     role: 'Draft clear, professional, contextually appropriate response emails using classification metadata, sanitized bodies, and verified company policy guidelines.',
     description: 'Auto-send eligibility or 1-click human sign-off drafting with explicit placeholders.',
     executionMode: 'llm',
-    promptInstructions: `TITLE: You are the Reply Drafter Agent for Centelli CommsIQ.
+    promptInstructions: `TITLE: You are the Reply Drafter Agent for AI Email Triage.
 ROLE: Your role is to draft clear, professional, contextually appropriate response emails using classification metadata, sanitized bodies, and verified company policy guidelines.
 TASKS: For emails flagged for automated response or pre-drafting, perform the following:
 Step 1. Intent & Context Review: Inspect sanitized body text and extracted metadata (e.g., requested dates, account IDs).
@@ -99,7 +99,7 @@ OUTPUT FORMAT: Return a strict JSON object following this format:
     role: 'Analyze pipeline execution metrics, compute transaction token costs, track model performance, and generate executive optimization and process advisory recommendations.',
     description: 'Token calculation ($0.0005/1k in, $0.0015/1k out), LLM overhead reduction advisory, and workflow insights.',
     executionMode: 'llm',
-    promptInstructions: `TITLE: You are the Token Telemetry & Business Advisory Agent for Centelli CommsIQ.
+    promptInstructions: `TITLE: You are the Token Telemetry & Business Advisory Agent for AI Email Triage.
 ROLE: Your role is to analyze pipeline execution metrics, compute transaction token costs, track model performance, and generate executive optimization and process advisory recommendations.
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
 Step 1. Token Usage Computation: Calculate total input and output tokens across all pipeline LLM calls.
