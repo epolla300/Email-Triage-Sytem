@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Header } from './components/Header';
 import { InboxTab } from './components/InboxTab';
 import { AgentsTab } from './components/AgentsTab';
@@ -7,7 +7,9 @@ import { AnalyticsDrawer } from './components/AnalyticsDrawer';
 import { AnalyticsTab } from './components/AnalyticsTab';
 import { ComposeModal } from './components/ComposeModal';
 import { EmailItem, LLMConfig, BlackboardSlate, TriageRunRecord } from './types/triage';
-import { DEFAULT_LLM_CONFIG } from './constants/agents';
+import { DEFAULT_LLM_CONFIG, calculateModelCostUSD } from './constants/agents';
+import { parseUploadedDatasetFile } from './utils/csvParser';
+import { evaluateSlateAgainstGroundTruth } from './utils/evaluation';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'inbox' | 'agents' | 'forwarding' | 'analytics'>('inbox');
@@ -38,6 +40,7 @@ export default function App() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAgentIndex, setActiveAgentIndex] = useState<number>(0);
+  const stopRequestedRef = useRef(false);
 
   const [feedEvents, setFeedEvents] = useState<
     Array<{ time: string; agent: string; message: string; type: 'info' | 'warn' | 'threat' | 'success' }>
@@ -178,11 +181,9 @@ export default function App() {
         // Record run in memory & spreadsheet history
         const inTok = slate.agent5_telemetry?.telemetry_summary.total_input_tokens ?? 0;
         const outTok = slate.agent5_telemetry?.telemetry_summary.total_output_tokens ?? 0;
-        const calcCost =
-          llmConfig.provider === 'custom'
-            ? 0
-            : slate.agent5_telemetry?.telemetry_summary.total_pipeline_cost_usd ??
-              ((inTok / 1000) * 0.0005 + (outTok / 1000) * 0.0015);
+        const meta = slate.execution_meta;
+        const calcCost = calculateModelCostUSD(llmConfig.provider, llmConfig.model, inTok, outTok);
+        const evaluation = evaluateSlateAgainstGroundTruth(slate, target.groundTruth);
 
         const newRunRecord: TriageRunRecord = {
           runId: `RUN-${Date.now().toString(36).toUpperCase()}`,
@@ -190,12 +191,23 @@ export default function App() {
           dateStr: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }),
           datasetName: target.datasetName || 'General Queue',
           telemetryEnabled: isTelemetryActive,
+          classifierMode: meta?.classifierMode || llmConfig.classifierMode || 'llm',
+          temperature: meta?.temperature ?? llmConfig.temperature ?? 0,
+          accessMethod:
+            meta?.accessMethod ||
+            (llmConfig.provider === 'ollama'
+              ? 'Local Hosted'
+              : llmConfig.provider === 'custom'
+              ? 'Custom Gateway'
+              : llmConfig.provider === 'code-baseline'
+              ? 'Deterministic Code'
+              : 'Cloud API'),
           emailId: emailId,
           from: target.from,
           subject: target.subject,
           provider: llmConfig.provider,
           model: llmConfig.model,
-          durationMs: slate.execution_meta?.totalDurationMs ?? 0,
+          durationMs: meta?.totalDurationMs ?? 0,
           inputTokens: inTok,
           outputTokens: outTok,
           totalTokens: inTok + outTok,
@@ -226,13 +238,19 @@ export default function App() {
             party_size: null,
             estimated_value: null,
           },
+          formatCompliant: meta?.formatCompliant !== false,
+          failureType: meta?.failureType || 'NONE',
+          failureDetail: meta?.failureDetail,
+          usedFallback: Boolean(meta?.usedFallback),
+          groundTruth: target.groundTruth,
+          evaluation,
           slate
         };
 
         setRunHistory((prev) => {
           const updated = [newRunRecord, ...prev];
           try {
-            localStorage.setItem('centelli_triage_run_history', JSON.stringify(updated.slice(0, 150)));
+            localStorage.setItem('centelli_triage_run_history', JSON.stringify(updated.slice(0, 1200)));
           } catch (e) {
             console.error('Failed to persist run history', e);
           }
@@ -266,13 +284,21 @@ export default function App() {
     }
   };
 
+  // Stop sequential batch processing
+  const handleStopProcessing = () => {
+    stopRequestedRef.current = true;
+    addFeedEvent('Pipeline', 'Stop requested. Halting after current email completes.', 'warn');
+  };
+
   // Process all pending emails in sequence
   const handleProcessAll = async () => {
     const pending = emails.filter((e) => e.status === 'Pending');
     if (pending.length === 0 || isProcessing) return;
 
+    stopRequestedRef.current = false;
     setActiveTab('agents');
     for (const email of pending) {
+      if (stopRequestedRef.current) break;
       setSelectedEmailId(email.id);
       await handleProcessSingle(email.id);
     }
@@ -306,36 +332,14 @@ export default function App() {
     }
   };
 
-  // File import (JSON or CSV)
+  // File import (JSON, CSV, or XLSX via RFC-4180 + ground-truth parser)
   const handleImportFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
-        const text = await file.text();
-        let imported: Array<{ from?: string; subject?: string; body?: string }> = [];
-
-        if (file.name.endsWith('.json')) {
-          const parsed = JSON.parse(text);
-          imported = Array.isArray(parsed) ? parsed : [parsed];
-        } else if (file.name.endsWith('.csv')) {
-          const lines = text.split('\n').filter((l) => l.trim().length > 0);
-          if (lines.length > 1) {
-            // Assume header is line 0
-            for (let j = 1; j < lines.length; j++) {
-              const parts = lines[j].split(',');
-              if (parts.length >= 3) {
-                imported.push({
-                  from: parts[0].replace(/^"|"$/g, '').trim(),
-                  subject: parts[1].replace(/^"|"$/g, '').trim(),
-                  body: parts.slice(2).join(',').replace(/^"|"$/g, '').trim()
-                });
-              }
-            }
-          }
-        }
-
+        const imported = await parseUploadedDatasetFile(file);
         const newItems: EmailItem[] = imported.map((item) => ({
           id: Math.random().toString(36).slice(2, 10),
           from: item.from || 'imported@client.com',
@@ -343,7 +347,8 @@ export default function App() {
           body: item.body || '',
           datasetName: file.name,
           receivedAt: Date.now(),
-          status: 'Pending'
+          status: 'Pending',
+          groundTruth: item.groundTruth
         }));
 
         if (newItems.length > 0) {
@@ -352,7 +357,7 @@ export default function App() {
           addFeedEvent('Import', `Imported ${newItems.length} records from ${file.name}`, 'success');
         }
       } catch (err: any) {
-        alert(`Failed to import ${file.name}: ${err.message}`);
+        addFeedEvent('Error', `Failed to import ${file.name}: ${err.message}`, 'threat');
       }
     }
   };
@@ -387,6 +392,7 @@ export default function App() {
             onDeleteSingle={handleDeleteSingle}
             onImportFiles={handleImportFiles}
             isProcessing={isProcessing}
+            onStopProcessing={handleStopProcessing}
             onNavigateToAgents={() => setActiveTab('agents')}
           />
         )}

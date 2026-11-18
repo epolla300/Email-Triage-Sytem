@@ -22,8 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   isProcessing
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full px-4 md:px-8 py-3.5 bg-white/35 backdrop-blur-xl border-b border-white/60 shadow-[0_8px_30px_-12px_rgba(79,70,229,0.12)] transition-colors">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 items-center gap-3">
+    <header className="sticky top-3 z-30 mx-auto mt-3 w-[calc(100%-2rem)] max-w-7xl px-4 md:px-5 py-2 rounded-3xl md:rounded-full bg-white/60 backdrop-blur-xl border border-white/80 shadow-[0_12px_36px_-10px_rgba(79,70,229,0.18),0_2px_6px_rgba(15,23,42,0.04)] transition-colors">
+      <div className="w-full grid grid-cols-1 md:grid-cols-3 items-center gap-3">
         {/* Top Left: Model Pill */}
         <div className="pointer-events-auto flex items-center gap-2.5 justify-start">
           <button

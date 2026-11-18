@@ -1,4 +1,9 @@
-import { PipelineAgentDef, LLMConfig } from '../types/triage';
+import {
+  PipelineAgentDef,
+  LLMConfig,
+  ScoringWeights,
+  AcceptanceThresholds
+} from '../types/triage';
 
 export const AGENT_DEFINITIONS: PipelineAgentDef[] = [
   {
@@ -145,7 +150,11 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   model: 'gemini-3.8-flash',
   endpoint: 'https://generativelanguage.googleapis.com',
   apiKey: '',
-  enableTelemetry: true
+  enableTelemetry: true,
+  classifierMode: 'llm',
+  temperature: 0,
+  timeoutMs: 15000,
+  allowFallbackOnFailure: true
 };
 
 export const AVAILABLE_PROVIDERS: { id: LLMConfig['provider']; name: string; defaultModel: string; defaultEndpoint: string; note: string }[] = [
@@ -183,6 +192,13 @@ export const AVAILABLE_PROVIDERS: { id: LLMConfig['provider']; name: string; def
     defaultModel: 'custom-model',
     defaultEndpoint: 'https://your-llm-proxy.example.com/v1',
     note: 'Custom enterprise LLM gateway with OpenAI-compatible signature.'
+  },
+  {
+    id: 'code-baseline',
+    name: 'Deterministic Code Baseline (0 Tokens)',
+    defaultModel: 'regex-keyword-v1',
+    defaultEndpoint: 'local://deterministic',
+    note: 'Zero-token rule/regex baseline for Tier-0 cost & accuracy benchmarking.'
   }
 ];
 
@@ -190,7 +206,8 @@ export const PRIMARY_CATEGORIES = [
   'Sales / High-Value',
   'Customer Service',
   'Admin / Operations',
-  'Junk / Low-Priority'
+  'Junk / Low-Priority',
+  'Insufficient Info / Unroutable'
 ] as const;
 
 export const QUEUE_LIST = [
@@ -202,3 +219,53 @@ export const QUEUE_LIST = [
   'Security_Quarantine_Queue',
   'General_Inquiry_Queue'
 ];
+
+export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
+  accuracy: 35,
+  consistency: 20,
+  doNotDecide: 15,
+  formatCompliance: 10,
+  costEfficiency: 10,
+  latency: 10,
+  locked: false
+};
+
+export const DEFAULT_ACCEPTANCE_THRESHOLDS: AcceptanceThresholds = {
+  minCategoryAccuracyPct: 85,
+  minConsistencyPct: 90,
+  minFormatCompliancePct: 98,
+  maxFalseNegativeRatePct: 5,
+  maxLatencyMs: 5000
+};
+
+/**
+ * Per-1k token pricing table (USD) for realistic economic comparisons & 100k/1M annual projections.
+ */
+const MODEL_PRICING_PER_1K: Array<{ match: RegExp; input: number; output: number }> = [
+  { match: /gemini.*pro/i, input: 0.00125, output: 0.005 },
+  { match: /gemini.*flash-lite|flash-8b/i, input: 0.000075, output: 0.0003 },
+  { match: /gemini.*flash/i, input: 0.0001, output: 0.0004 },
+  { match: /gpt-4o-mini/i, input: 0.00015, output: 0.0006 },
+  { match: /gpt-4o/i, input: 0.0025, output: 0.01 },
+  { match: /gpt-4\.1-mini|gpt-4\.1-nano/i, input: 0.0004, output: 0.0016 },
+  { match: /claude.*haiku/i, input: 0.0008, output: 0.004 },
+  { match: /claude.*sonnet/i, input: 0.003, output: 0.015 },
+  { match: /claude.*opus/i, input: 0.015, output: 0.075 }
+];
+
+export function calculateModelCostUSD(
+  provider: string,
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): number {
+  const p = (provider || '').toLowerCase();
+  if (p === 'ollama' || p === 'custom' || p === 'code-baseline') {
+    return 0;
+  }
+  const m = model || '';
+  const entry = MODEL_PRICING_PER_1K.find((row) => row.match.test(m));
+  const inRate = entry ? entry.input : 0.0005;
+  const outRate = entry ? entry.output : 0.0015;
+  return (inputTokens / 1000) * inRate + (outputTokens / 1000) * outRate;
+}

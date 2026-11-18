@@ -10,7 +10,9 @@ import {
   ClassifierOutput,
   RouterOutput,
   ReplyDrafterOutput,
-  TelemetryOutput
+  TelemetryOutput,
+  ExecutionMeta,
+  FailureType
 } from './src/types/triage';
 
 dotenv.config();
@@ -630,7 +632,8 @@ async function callGemini(
   systemInstruction: string,
   userPrompt: string,
   modelName: string = 'gemini-3.8-flash',
-  customKey?: string
+  customKey?: string,
+  temperature: number = 0
 ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const apiKey = customKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -651,7 +654,8 @@ async function callGemini(
     contents: userPrompt,
     config: {
       systemInstruction,
-      responseMimeType: 'application/json'
+      responseMimeType: 'application/json',
+      temperature
     }
   });
 
@@ -688,6 +692,7 @@ async function callOpenAICompatible(
     headers,
     body: JSON.stringify({
       model: config.model || 'gpt-4o-mini',
+      temperature: config.temperature ?? 0,
       messages: [
         { role: 'system', content: systemInstruction },
         { role: 'user', content: userPrompt }
@@ -733,6 +738,7 @@ async function callAnthropic(
     headers,
     body: JSON.stringify({
       model: config.model || 'claude-3-5-sonnet-20241022',
+      temperature: config.temperature ?? 0,
       system: `${systemInstruction}\nReturn your answer strictly as valid JSON without extra text or markdown wraps.`,
       messages: [{ role: 'user', content: userPrompt }],
       max_tokens: 1500
@@ -755,7 +761,7 @@ async function callAnthropic(
   return { text: cleaned, inputTokens, outputTokens };
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number = 5500): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, ms: number = 15000): Promise<T> {
   let timeoutId: NodeJS.Timeout;
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error(`API call timed out after ${ms}ms`)), ms);
@@ -765,8 +771,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number = 5500): Promise<T> {
   });
 }
 
+function classifyFailure(err: any): FailureType {
+  const msg = String(err?.message || err || '');
+  if (/timed out|timeout/i.test(msg)) return 'TIMEOUT';
+  if (err instanceof SyntaxError || /json|unexpected token|parse/i.test(msg)) return 'FORMAT_ERROR';
+  if (/schema|missing required/i.test(msg)) return 'SCHEMA_ERROR';
+  return 'API_ERROR';
+}
+
 /**
- * Unified Agent Dispatcher: calls selected model or falls back gracefully
+ * Unified Agent Dispatcher: calls selected model or throws typed error
  */
 async function callAgent(
   systemInstruction: string,
@@ -776,20 +790,22 @@ async function callAgent(
   let rawText = '';
   let inputTokens = 0;
   let outputTokens = 0;
+  const timeoutMs = config.timeoutMs ?? 15000;
+  const temperature = config.temperature ?? 0;
 
   try {
     if (config.provider === 'gemini') {
-      const res = await withTimeout(callGemini(systemInstruction, userPrompt, config.model, config.apiKey), 5500);
+      const res = await withTimeout(callGemini(systemInstruction, userPrompt, config.model, config.apiKey, temperature), timeoutMs);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
     } else if (config.provider === 'openai' || config.provider === 'ollama' || config.provider === 'custom') {
-      const res = await withTimeout(callOpenAICompatible(systemInstruction, userPrompt, config), 5500);
+      const res = await withTimeout(callOpenAICompatible(systemInstruction, userPrompt, config), timeoutMs);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
     } else if (config.provider === 'anthropic') {
-      const res = await withTimeout(callAnthropic(systemInstruction, userPrompt, config), 5500);
+      const res = await withTimeout(callAnthropic(systemInstruction, userPrompt, config), timeoutMs);
       rawText = res.text;
       inputTokens = res.inputTokens;
       outputTokens = res.outputTokens;
@@ -801,8 +817,7 @@ async function callAgent(
     const parsed = JSON.parse(cleaned);
     return { json: parsed, inputTokens, outputTokens };
   } catch (err: any) {
-    // If the external LLM call failed or wasn't configured, log and throw so the pipeline orchestrator can use deterministic fallback
-    console.warn(`[Agent Execution Notice] Using deterministic analyzer: ${err.message}`);
+    console.warn(`[Agent Execution Notice] ${err.message}`);
     throw err;
   }
 }
@@ -886,6 +901,35 @@ app.post('/api/triage/single', async (req: Request, res: Response) => {
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
 
+  const isCodeBaseline = activeConfig.provider === 'code-baseline';
+  const classifierMode: ExecutionMeta['classifierMode'] =
+    isCodeBaseline || activeConfig.classifierMode === 'code' ? 'code' : 'llm';
+  const temperature = activeConfig.temperature ?? 0;
+  const accessMethod: ExecutionMeta['accessMethod'] = isCodeBaseline
+    ? 'Deterministic Code'
+    : activeConfig.provider === 'ollama'
+    ? 'Local Hosted'
+    : activeConfig.provider === 'custom'
+    ? 'Custom Gateway'
+    : 'Cloud API';
+
+  let formatCompliant = true;
+  let failureType: FailureType = 'NONE';
+  let failureDetail: string | undefined;
+  let usedFallback = false;
+
+  const recordAgentFailure = (agentLabel: string, err: any) => {
+    const fType = classifyFailure(err);
+    if (failureType === 'NONE') {
+      failureType = fType;
+      failureDetail = `${agentLabel}: ${err?.message || 'Unknown execution failure'}`;
+    }
+    if (fType === 'FORMAT_ERROR' || fType === 'SCHEMA_ERROR') {
+      formatCompliant = false;
+    }
+    usedFallback = true;
+  };
+
   try {
     // ---------------------------------------------
     // Agent 1: Sanitizer & Security Agent (Code Engine - 0 LLM Tokens)
@@ -899,7 +943,11 @@ app.post('/api/triage/single', async (req: Request, res: Response) => {
     // Agent 2: Classifier Agent
     // ---------------------------------------------
     const t2 = Date.now();
-    const prompt2 = `TITLE: You are the Classifier Agent for AI Email Triage.
+    let classifierRes: ClassifierOutput;
+    if (classifierMode === 'code') {
+      classifierRes = runCodeClassifier(slate.agent1_sanitizer);
+    } else {
+      const prompt2 = `TITLE: You are the Classifier Agent for AI Email Triage.
 ROLE: Your role is to analyze sanitized Blackboard Slate payloads to classify primary business category, identify secondary intent, score urgency and sentiment, extract structured entities, and determine human review requirements.
 TASKS: Using the sanitized email inputs from Agent 1 on the Blackboard Slate, perform the following:
 Step 1. Primary Category Classification: Classify into exactly one of:
@@ -907,12 +955,13 @@ Step 1. Primary Category Classification: Classify into exactly one of:
 - "Customer Service" (technical support, outages, bugs, refunds, complaints, booking modifications, FAQs)
 - "Admin / Operations" (invoices, AP/AR, W-9/tax forms, vendor management, payroll, HR, IT/VPN access, compliance)
 - "Junk / Low-Priority" (spam, promotional newsletters, solicitations, or flagged security threats)
-Step 2. Secondary Intent Identification: Provide a concise specific intent label (e.g., "Group RFP / Volume Quote", "Technical Outage / Defect", "Refund & Billing Dispute", "Vendor Invoice & AP", "Security Threat / Prompt Injection").
+- "Insufficient Info / Unroutable" (ambiguous, missing context, or no appropriate routing category — "do not decide" case)
+Step 2. Secondary Intent Identification: Provide a concise specific intent label (e.g., "Group RFP / Volume Quote", "Technical Outage / Defect", "Refund & Billing Dispute", "Vendor Invoice & AP", "Insufficient Information", "Security Threat / Prompt Injection").
 Step 3. Urgency (1-5) & Sentiment Rating:
 - Assign sentiment: "Positive", "Neutral", "Frustrated", or "Hostile".
 - Assign urgency integer 1 to 5 (5 = critical outage, hostile/legal threat, or security risk; 1 = spam/low-priority).
 Step 4. Metadata Extraction: Extract account_id, requested_dates, party_size, and estimated_value strictly from the sanitized text (use null when not present).
-Step 5. Confidence & Human Review Flagging: Assign confidence_score (0.00 to 1.00). Set needs_human_review to true if confidence_score < 0.80, sentiment is "Hostile", is_safe is false, or legal/regulatory/ambiguous multi-request issues require human oversight.
+Step 5. Confidence & Human Review Flagging: Assign confidence_score (0.00 to 1.00). Set needs_human_review to true if confidence_score < 0.80, category is "Insufficient Info / Unroutable", sentiment is "Hostile", is_safe is false, or legal/regulatory/ambiguous multi-request issues require human oversight.
 CONSTRAINTS: Operate strictly on the sanitized Blackboard Slate inputs. Do not invent or fabricate extracted_metadata values that do not appear in the email.
 OUTPUT FORMAT: Return a strict JSON object following this format:
 {
@@ -929,7 +978,7 @@ OUTPUT FORMAT: Return a strict JSON object following this format:
     "estimated_value": null
   }
 }
-Valid category values: "Sales / High-Value", "Customer Service", "Admin / Operations", "Junk / Low-Priority".
+Valid category values: "Sales / High-Value", "Customer Service", "Admin / Operations", "Junk / Low-Priority", "Insufficient Info / Unroutable".
 Valid sentiment values: "Positive", "Neutral", "Frustrated", "Hostile".
 
 BLACKBOARD SLATE (Sanitizer Output):
@@ -938,14 +987,19 @@ security_flag: ${slate.agent1_sanitizer.security_flag}
 sanitized_subject: ${slate.agent1_sanitizer.sanitized_subject}
 sanitized_body: ${slate.agent1_sanitizer.sanitized_body}`;
 
-    let classifierRes: ClassifierOutput;
-    try {
-      const res = await callAgent('You are the Classifier Agent for AI Email Triage.', prompt2, activeConfig);
-      totalInputTokens += res.inputTokens;
-      totalOutputTokens += res.outputTokens;
-      classifierRes = res.json as ClassifierOutput;
-    } catch {
-      classifierRes = deterministicAnalyze(slate.raw_input).classifier;
+      try {
+        const res = await callAgent('You are the Classifier Agent for AI Email Triage.', prompt2, activeConfig);
+        totalInputTokens += res.inputTokens;
+        totalOutputTokens += res.outputTokens;
+        const parsed = res.json as ClassifierOutput;
+        if (!parsed || typeof parsed.category !== 'string' || typeof parsed.urgency !== 'number') {
+          throw new Error('Schema error: Classifier response missing required category or urgency fields.');
+        }
+        classifierRes = parsed;
+      } catch (err: any) {
+        recordAgentFailure('Agent 2 (Classifier)', err);
+        classifierRes = deterministicAnalyze(slate.raw_input).classifier;
+      }
     }
     stepDurations['agent2_classifier'] = Date.now() - t2;
     slate.agent2_classifier = classifierRes;
@@ -954,7 +1008,11 @@ sanitized_body: ${slate.agent1_sanitizer.sanitized_body}`;
     // Agent 3: Router & Action Agent
     // ---------------------------------------------
     const t3 = Date.now();
-    const prompt3 = `TITLE: You are the Router & Action Agent for AI Email Triage.
+    let routerRes: RouterOutput;
+    if (isCodeBaseline) {
+      routerRes = deterministicAnalyze(slate.raw_input).router;
+    } else {
+      const prompt3 = `TITLE: You are the Router & Action Agent for AI Email Triage.
 ROLE: Your role is to evaluate classification metadata on the Blackboard Slate and determine optimal queue placement, team assignment, priority tagging, and alert recommendations.
 TASKS: Using the classification slate inputs, compute the operational routing decision:
 Step 1. Destination Queue Assignment: Determine target queue (e.g., Sales_Gold_Queue, Support_Tier2_Escalation, Finance_AP, Human_Triage_Queue).
@@ -979,14 +1037,19 @@ Valid crm_action values: "CREATE_LEAD", "UPDATE_TICKET", "LOG_ONLY", "SKIP".
 BLACKBOARD SLATE (Classifier Output):
 ${JSON.stringify(slate.agent2_classifier, null, 2)}`;
 
-    let routerRes: RouterOutput;
-    try {
-      const res = await callAgent('You are the Router & Action Agent for AI Email Triage.', prompt3, activeConfig);
-      totalInputTokens += res.inputTokens;
-      totalOutputTokens += res.outputTokens;
-      routerRes = res.json as RouterOutput;
-    } catch {
-      routerRes = deterministicAnalyze(slate.raw_input).router;
+      try {
+        const res = await callAgent('You are the Router & Action Agent for AI Email Triage.', prompt3, activeConfig);
+        totalInputTokens += res.inputTokens;
+        totalOutputTokens += res.outputTokens;
+        const parsed = res.json as RouterOutput;
+        if (!parsed || typeof parsed.target_queue !== 'string') {
+          throw new Error('Schema error: Router response missing target_queue.');
+        }
+        routerRes = parsed;
+      } catch (err: any) {
+        recordAgentFailure('Agent 3 (Router)', err);
+        routerRes = deterministicAnalyze(slate.raw_input).router;
+      }
     }
     stepDurations['agent3_router'] = Date.now() - t3;
     slate.agent3_router = routerRes;
@@ -995,7 +1058,11 @@ ${JSON.stringify(slate.agent2_classifier, null, 2)}`;
     // Agent 4: Reply Drafter Agent
     // ---------------------------------------------
     const t4 = Date.now();
-    const prompt4 = `TITLE: You are the Reply Drafter Agent for AI Email Triage.
+    let replyRes: ReplyDrafterOutput;
+    if (isCodeBaseline) {
+      replyRes = deterministicAnalyze(slate.raw_input).replyDrafter;
+    } else {
+      const prompt4 = `TITLE: You are the Reply Drafter Agent for AI Email Triage.
 ROLE: Your role is to draft clear, professional, contextually appropriate response emails using classification metadata, sanitized bodies, and verified company policy guidelines.
 TASKS: For emails flagged for automated response or pre-drafting, perform the following:
 Step 1. Intent & Context Review: Inspect sanitized body text and extracted metadata (e.g., requested dates, account IDs).
@@ -1019,14 +1086,19 @@ Sanitized Body: ${slate.agent1_sanitizer.sanitized_body}
 Classification: ${JSON.stringify(slate.agent2_classifier, null, 2)}
 Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
 
-    let replyRes: ReplyDrafterOutput;
-    try {
-      const res = await callAgent('You are the Reply Drafter Agent for AI Email Triage.', prompt4, activeConfig);
-      totalInputTokens += res.inputTokens;
-      totalOutputTokens += res.outputTokens;
-      replyRes = res.json as ReplyDrafterOutput;
-    } catch {
-      replyRes = deterministicAnalyze(slate.raw_input).replyDrafter;
+      try {
+        const res = await callAgent('You are the Reply Drafter Agent for AI Email Triage.', prompt4, activeConfig);
+        totalInputTokens += res.inputTokens;
+        totalOutputTokens += res.outputTokens;
+        const parsed = res.json as ReplyDrafterOutput;
+        if (!parsed || typeof parsed.draft_status !== 'string') {
+          throw new Error('Schema error: Reply Drafter response missing draft_status.');
+        }
+        replyRes = parsed;
+      } catch (err: any) {
+        recordAgentFailure('Agent 4 (Drafter)', err);
+        replyRes = deterministicAnalyze(slate.raw_input).replyDrafter;
+      }
     }
     stepDurations['agent4_reply'] = Date.now() - t4;
     slate.agent4_reply = replyRes;
@@ -1035,16 +1107,15 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
     // Agent 5: Token Telemetry & Business Advisory Agent
     // ---------------------------------------------
     const t5 = Date.now();
-    const isCustomProvider = activeConfig.provider === 'custom';
-    const benchmarkCost = isCustomProvider
+    const isZeroCostProvider = activeConfig.provider === 'custom' || activeConfig.provider === 'ollama' || isCodeBaseline;
+    const benchmarkCost = isZeroCostProvider
       ? 0
       : (totalInputTokens / 1000) * 0.0005 + (totalOutputTokens / 1000) * 0.0015;
-    const isTelemetryEnabled = activeConfig.enableTelemetry !== false;
+    const isTelemetryEnabled = !isCodeBaseline && activeConfig.enableTelemetry !== false;
 
     let telemetryRes: TelemetryOutput;
 
     if (!isTelemetryEnabled) {
-      // Telemetry Agent toggled OFF: Bypass LLM inference to save tokens and time
       stepDurations['agent5_telemetry'] = 0;
       telemetryRes = {
         telemetry_summary: {
@@ -1052,8 +1123,12 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
           total_output_tokens: totalOutputTokens,
           total_pipeline_cost_usd: parseFloat(benchmarkCost.toFixed(6))
         },
-        cost_optimization_recommendation: 'Telemetry Agent bypassed per user pipeline toggle (zero extra tokens consumed).',
-        business_process_advisory: 'Telemetry Agent disabled. Core 4-agent triage was executed successfully.'
+        cost_optimization_recommendation: isCodeBaseline
+          ? 'Deterministic Code Baseline executed with 0 LLM tokens.'
+          : 'Telemetry Agent bypassed per user pipeline toggle (zero extra tokens consumed).',
+        business_process_advisory: isCodeBaseline
+          ? 'Tier-0 deterministic rule baseline complete.'
+          : 'Telemetry Agent disabled. Core 4-agent triage was executed successfully.'
       };
     } else {
       const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for AI Email Triage.
@@ -1061,8 +1136,8 @@ ROLE: Your role is to analyze pipeline execution metrics, compute transaction to
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
 Step 1. Token Usage Computation: Note that Agent 1 (Sanitizer) executes deterministically in code (0 LLM tokens). Total LLM input/output tokens from Agents 2-4: (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
 Step 2. Financial Cost Calculation: ${
-        isCustomProvider
-          ? 'Custom LLM Gateway pricing is $0.00 / 1k tokens. Total pipeline cost: $0.'
+        isZeroCostProvider
+          ? 'Provider pricing is $0.00 / 1k tokens. Total pipeline cost: $0.'
           : `Compute total USD cost per transaction using benchmark enterprise API pricing ($0.0005 / 1k input tokens, $0.0015 / 1k output tokens). Baseline cost: $${benchmarkCost.toFixed(6)}.`
       }
 CONSTRAINTS: Focus exclusively on computational cost, system telemetry. Do not alter routing outcomes or draft text on the Blackboard Slate.
@@ -1072,7 +1147,9 @@ OUTPUT FORMAT: Return a strict JSON object following this format:
     "total_input_tokens": ${totalInputTokens},
     "total_output_tokens": ${totalOutputTokens},
     "total_pipeline_cost_usd": ${parseFloat(benchmarkCost.toFixed(6))}
-  }
+  },
+  "cost_optimization_recommendation": "string",
+  "business_process_advisory": "string"
 }
 
 BLACKBOARD SLATE TRANSACTION SUMMARY:
@@ -1084,14 +1161,14 @@ Assigned Queue: ${slate.agent3_router.target_queue}`;
       try {
         const res = await callAgent('You are the Token Telemetry & Business Advisory Agent.', prompt5, activeConfig);
         telemetryRes = res.json as TelemetryOutput;
-        if (isCustomProvider && telemetryRes?.telemetry_summary) {
+        if (isZeroCostProvider && telemetryRes?.telemetry_summary) {
           telemetryRes.telemetry_summary.total_pipeline_cost_usd = 0;
         }
       } catch {
         telemetryRes = deterministicAnalyze(slate.raw_input).telemetry;
         telemetryRes.telemetry_summary.total_input_tokens = totalInputTokens || telemetryRes.telemetry_summary.total_input_tokens;
         telemetryRes.telemetry_summary.total_output_tokens = totalOutputTokens || telemetryRes.telemetry_summary.total_output_tokens;
-        telemetryRes.telemetry_summary.total_pipeline_cost_usd = isCustomProvider
+        telemetryRes.telemetry_summary.total_pipeline_cost_usd = isZeroCostProvider
           ? 0
           : parseFloat(benchmarkCost.toFixed(6)) || telemetryRes.telemetry_summary.total_pipeline_cost_usd;
       }
@@ -1100,13 +1177,21 @@ Assigned Queue: ${slate.agent3_router.target_queue}`;
     slate.agent5_telemetry = telemetryRes;
 
     const totalDuration = Date.now() - startTime;
-    slate.execution_meta = {
+    const executionMeta: ExecutionMeta = {
       provider: activeConfig.provider,
       model: activeConfig.model,
+      classifierMode,
+      temperature,
+      accessMethod,
       totalDurationMs: totalDuration,
       stepDurationsMs: stepDurations,
-      executedAt: new Date().toISOString()
+      executedAt: new Date().toISOString(),
+      formatCompliant,
+      failureType,
+      failureDetail,
+      usedFallback
     };
+    slate.execution_meta = executionMeta;
 
     res.json({ success: true, slate });
   } catch (err: any) {
