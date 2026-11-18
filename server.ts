@@ -600,10 +600,10 @@ function deterministicAnalyze(email: { from: string; subject: string; body: stri
     template_used: templateUsed
   };
 
-  // 6. Telemetry & Advisory (Agents 1 & 2 run in code = 0 tokens)
+  // 6. Telemetry & Advisory (Agent 1 runs in code = 0 tokens)
   const rawLength = `${email.subject}\n${email.body}`.length;
-  const inputToks = Math.max(80, Math.floor(rawLength * 0.45) + 220);
-  const outputToks = Math.max(60, Math.floor((draftBody.length + 140) * 0.35));
+  const inputToks = Math.max(120, Math.floor(rawLength * 0.65) + 320);
+  const outputToks = Math.max(80, Math.floor((draftBody.length + 220) * 0.45));
   const cost = (inputToks / 1000) * 0.0005 + (outputToks / 1000) * 0.0015;
 
   const telemetry: TelemetryOutput = {
@@ -613,8 +613,8 @@ function deterministicAnalyze(email: { from: string; subject: string; body: stri
       total_pipeline_cost_usd: parseFloat(cost.toFixed(5))
     },
     cost_optimization_recommendation: category === 'Junk / Low-Priority'
-      ? 'Agents 1 & 2 blocked/filtered this payload in code (0 LLM tokens). Consider skipping LLM reply drafting for spam/quarantine payloads to achieve 100% token savings.'
-      : 'Agents 1 & 2 execute deterministically in code (0 tokens). Consolidating Agent 3 routing into rules could further reduce LLM latency.',
+      ? 'Agent 1 flagged this payload in code (0 LLM tokens). Consider short-circuiting downstream LLM agents for spam/quarantine payloads to maximize token savings.'
+      : 'Agent 1 executes deterministically in code (0 tokens). Consolidating Agent 3 routing into rules could further reduce LLM latency.',
     business_process_advisory: urgency >= 4
       ? 'High-urgency transaction: Recommended establishing an automated SLA escalation trigger if unassigned after 15 minutes.'
       : 'Routine transaction: Standard 4-hour SLA applies. Candidate for 1-click automated response approval.'
@@ -896,10 +896,57 @@ app.post('/api/triage/single', async (req: Request, res: Response) => {
     slate.agent1_sanitizer = sanitizerRes;
 
     // ---------------------------------------------
-    // Agent 2: Classifier Agent (Code Engine - 0 LLM Tokens)
+    // Agent 2: Classifier Agent
     // ---------------------------------------------
     const t2 = Date.now();
-    const classifierRes: ClassifierOutput = runCodeClassifier(slate.agent1_sanitizer);
+    const prompt2 = `TITLE: You are the Classifier Agent for AI Email Triage.
+ROLE: Your role is to analyze sanitized Blackboard Slate payloads to classify primary business category, identify secondary intent, score urgency and sentiment, extract structured entities, and determine human review requirements.
+TASKS: Using the sanitized email inputs from Agent 1 on the Blackboard Slate, perform the following:
+Step 1. Primary Category Classification: Classify into exactly one of:
+- "Sales / High-Value" (RFPs, enterprise pricing, demos, seats/licenses, contracts, partnerships, group bookings)
+- "Customer Service" (technical support, outages, bugs, refunds, complaints, booking modifications, FAQs)
+- "Admin / Operations" (invoices, AP/AR, W-9/tax forms, vendor management, payroll, HR, IT/VPN access, compliance)
+- "Junk / Low-Priority" (spam, promotional newsletters, solicitations, or flagged security threats)
+Step 2. Secondary Intent Identification: Provide a concise specific intent label (e.g., "Group RFP / Volume Quote", "Technical Outage / Defect", "Refund & Billing Dispute", "Vendor Invoice & AP", "Security Threat / Prompt Injection").
+Step 3. Urgency (1-5) & Sentiment Rating:
+- Assign sentiment: "Positive", "Neutral", "Frustrated", or "Hostile".
+- Assign urgency integer 1 to 5 (5 = critical outage, hostile/legal threat, or security risk; 1 = spam/low-priority).
+Step 4. Metadata Extraction: Extract account_id, requested_dates, party_size, and estimated_value strictly from the sanitized text (use null when not present).
+Step 5. Confidence & Human Review Flagging: Assign confidence_score (0.00 to 1.00). Set needs_human_review to true if confidence_score < 0.80, sentiment is "Hostile", is_safe is false, or legal/regulatory/ambiguous multi-request issues require human oversight.
+CONSTRAINTS: Operate strictly on the sanitized Blackboard Slate inputs. Do not invent or fabricate extracted_metadata values that do not appear in the email.
+OUTPUT FORMAT: Return a strict JSON object following this format:
+{
+  "category": "Sales / High-Value",
+  "intent": "string",
+  "confidence_score": 0.92,
+  "urgency": 3,
+  "sentiment": "Neutral",
+  "needs_human_review": false,
+  "extracted_metadata": {
+    "account_id": null,
+    "requested_dates": null,
+    "party_size": null,
+    "estimated_value": null
+  }
+}
+Valid category values: "Sales / High-Value", "Customer Service", "Admin / Operations", "Junk / Low-Priority".
+Valid sentiment values: "Positive", "Neutral", "Frustrated", "Hostile".
+
+BLACKBOARD SLATE (Sanitizer Output):
+is_safe: ${slate.agent1_sanitizer.is_safe}
+security_flag: ${slate.agent1_sanitizer.security_flag}
+sanitized_subject: ${slate.agent1_sanitizer.sanitized_subject}
+sanitized_body: ${slate.agent1_sanitizer.sanitized_body}`;
+
+    let classifierRes: ClassifierOutput;
+    try {
+      const res = await callAgent('You are the Classifier Agent for AI Email Triage.', prompt2, activeConfig);
+      totalInputTokens += res.inputTokens;
+      totalOutputTokens += res.outputTokens;
+      classifierRes = res.json as ClassifierOutput;
+    } catch {
+      classifierRes = deterministicAnalyze(slate.raw_input).classifier;
+    }
     stepDurations['agent2_classifier'] = Date.now() - t2;
     slate.agent2_classifier = classifierRes;
 
@@ -1012,7 +1059,7 @@ Routing Plan: ${JSON.stringify(slate.agent3_router, null, 2)}`;
       const prompt5 = `TITLE: You are the Token Telemetry & Business Advisory Agent for AI Email Triage.
 ROLE: Your role is to analyze pipeline execution metrics, compute transaction token costs, track model performance, and generate executive optimization and process advisory recommendations.
 TASKS: For each transaction state on the Blackboard Slate, execute the following evaluation:
-Step 1. Token Usage Computation: Note that Agent 1 (Sanitizer) and Agent 2 (Classifier) execute deterministically in code (0 LLM tokens). Total LLM input/output tokens from Agents 3-4: (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
+Step 1. Token Usage Computation: Note that Agent 1 (Sanitizer) executes deterministically in code (0 LLM tokens). Total LLM input/output tokens from Agents 2-4: (Input: ${totalInputTokens}, Output: ${totalOutputTokens}).
 Step 2. Financial Cost Calculation: ${
         isCustomProvider
           ? 'Custom LLM Gateway pricing is $0.00 / 1k tokens. Total pipeline cost: $0.'
@@ -1090,7 +1137,21 @@ app.post('/api/triage/step', async (req: Request, res: Response) => {
       output = fallback.sanitizer;
       slate.agent1_sanitizer = output;
     } else if (stepId === 2) {
-      output = fallback.classifier;
+      const san = slate.agent1_sanitizer || fallback.sanitizer;
+      try {
+        const prompt2 = `TITLE: You are the Classifier Agent for AI Email Triage.
+ROLE: Your role is to analyze sanitized Blackboard Slate payloads to classify primary business category, identify secondary intent, score urgency and sentiment, extract structured entities, and determine human review requirements.
+OUTPUT FORMAT: Return strict JSON with keys: category, intent, confidence_score, urgency, sentiment, needs_human_review, extracted_metadata.
+BLACKBOARD SLATE (Sanitizer Output):
+is_safe: ${san.is_safe}
+security_flag: ${san.security_flag}
+sanitized_subject: ${san.sanitized_subject}
+sanitized_body: ${san.sanitized_body}`;
+        const stepRes = await callAgent('You are the Classifier Agent for AI Email Triage.', prompt2, activeConfig);
+        output = stepRes.json as ClassifierOutput;
+      } catch {
+        output = fallback.classifier;
+      }
       slate.agent2_classifier = output;
     } else if (stepId === 3) {
       output = fallback.router;

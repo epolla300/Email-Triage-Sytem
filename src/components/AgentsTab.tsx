@@ -94,9 +94,10 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
         return JSON.stringify(slate.raw_input, null, 2);
       case 2:
         return JSON.stringify({
+          is_safe: slate.agent1_sanitizer?.is_safe,
+          security_flag: slate.agent1_sanitizer?.security_flag,
           sanitized_subject: slate.agent1_sanitizer?.sanitized_subject,
-          sanitized_body: slate.agent1_sanitizer?.sanitized_body,
-          security_flag: slate.agent1_sanitizer?.security_flag
+          sanitized_body: slate.agent1_sanitizer?.sanitized_body
         }, null, 2);
       case 3:
         return JSON.stringify(slate.agent2_classifier, null, 2);
@@ -127,7 +128,7 @@ export const AgentsTab: React.FC<AgentsTabProps> = ({
           Agent Blackboard Pipeline
         </h2>
         <p className="text-xs text-slate-600 font-medium">
-          Hybrid 5-stage slate pipeline: Agents 1–2 execute deterministically in code (0 tokens); Agents 3–5 run on your configured LLM.
+          Hybrid 5-stage slate pipeline: Agent 1 executes deterministically in code (0 tokens); Agents 2–5 run on your configured LLM.
         </p>
       </div>
 

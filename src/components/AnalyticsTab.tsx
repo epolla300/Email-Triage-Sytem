@@ -215,16 +215,17 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
     if ((r.confidenceScore || 0) >= 0.85) highConfCount++;
     if (r.telemetryEnabled === false) bypassedCount++;
 
-    // Agents 1 & 2 run deterministically in code (0 LLM tokens)
+    // Agent 1 runs deterministically in code (0 LLM tokens); Agents 2-5 run via LLM
     agentTokens[0] += 0;
-    agentTokens[1] += 0;
     if (r.telemetryEnabled === false) {
-      agentTokens[2] += Math.floor(inT * 0.42);
-      agentTokens[3] += Math.floor(inT * 0.58);
+      agentTokens[1] += Math.floor(inT * 0.30);
+      agentTokens[2] += Math.floor(inT * 0.30);
+      agentTokens[3] += Math.floor(inT * 0.40);
     } else {
-      agentTokens[2] += Math.floor(inT * 0.36);
-      agentTokens[3] += Math.floor(inT * 0.48);
-      agentTokens[4] += Math.floor(inT * 0.16);
+      agentTokens[1] += Math.floor(inT * 0.26);
+      agentTokens[2] += Math.floor(inT * 0.26);
+      agentTokens[3] += Math.floor(inT * 0.34);
+      agentTokens[4] += Math.floor(inT * 0.14);
     }
   });
 
@@ -545,7 +546,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           <div className="h-40 flex items-end gap-3 pt-8 pb-3 px-2 border-b border-slate-200">
             {[
               { name: '1. Sanitizer', val: agentTokens[0], isCode: true },
-              { name: '2. Classifier', val: agentTokens[1], isCode: true },
+              { name: '2. Classifier', val: agentTokens[1], isCode: false },
               { name: '3. Router', val: agentTokens[2], isCode: false },
               { name: '4. Drafter', val: agentTokens[3], isCode: false },
               { name: '5. Telemetry', val: agentTokens[4], isCode: false }

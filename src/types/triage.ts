@@ -1,14 +1,15 @@
 /**
- * Centelli CommsIQ - Blackboard Slate and Agent Types
+ * Centelli CommsIQ - Blackboard Slate, Evaluation & Capstone Types
  */
 
 export type SecurityFlag = 'NONE' | 'PROMPT_INJECTION' | 'PHISHING' | 'MALICIOUS_CONTENT';
 
-export type PrimaryCategory = 
+export type PrimaryCategory =
   | 'Sales / High-Value'
   | 'Customer Service'
   | 'Admin / Operations'
-  | 'Junk / Low-Priority';
+  | 'Junk / Low-Priority'
+  | 'Insufficient Info / Unroutable';
 
 export type Sentiment = 'Positive' | 'Neutral' | 'Frustrated' | 'Hostile';
 
@@ -19,6 +20,60 @@ export type NotificationChannel = 'SLACK_VIP_CHANNEL' | 'TEAMS_LEAD_CHANNEL' | '
 export type CRMAction = 'CREATE_LEAD' | 'UPDATE_TICKET' | 'LOG_ONLY' | 'SKIP';
 
 export type DraftStatus = 'READY_FOR_APPROVAL' | 'AUTO_SEND_ELIGIBLE' | 'MANUAL_WRITE_REQUIRED';
+
+export type FailureType =
+  | 'NONE'
+  | 'TIMEOUT'
+  | 'FORMAT_ERROR'
+  | 'SCHEMA_ERROR'
+  | 'API_ERROR';
+
+export type EvalErrorType =
+  | 'NONE'
+  | 'MISROUTED_CATEGORY'
+  | 'MISROUTED_QUEUE'
+  | 'FALSE_POSITIVE_ESCALATION'
+  | 'FALSE_NEGATIVE_ESCALATION'
+  | 'DO_NOT_DECIDE_FAILURE'
+  | 'FORMAT_FAILURE'
+  | 'API_FAILURE';
+
+export type ComplexityGroup = 'Simple' | 'Moderate' | 'Difficult';
+export type LengthGroup = 'Short' | 'Medium' | 'Long';
+export type AmbiguityGroup = 'Clear' | 'Partially Clear' | 'Unclear';
+export type DatasetSplit = 'dev' | 'test' | 'manual';
+
+export interface EmailGroundTruth {
+  expected_category?: string;
+  expected_queue?: string;
+  expected_urgency?: number;
+  expected_human_review?: boolean;
+  is_do_not_decide?: boolean;
+  expected_account_id?: string | null;
+  expected_dates?: string | null;
+  expected_party_size?: string | null;
+  expected_value?: string | null;
+  complexity?: ComplexityGroup;
+  length_group?: LengthGroup;
+  ambiguity?: AmbiguityGroup;
+  split?: DatasetSplit;
+  notes?: string;
+}
+
+export interface RunEvaluationResult {
+  hasGroundTruth: boolean;
+  categoryCorrect: boolean | null;
+  queueCorrect: boolean | null;
+  urgencyExact: boolean | null;
+  urgencyWithin1: boolean | null;
+  humanReviewCorrect: boolean | null;
+  doNotDecideCorrect: boolean | null;
+  metadataFieldsCorrect: number;
+  metadataFieldsTotal: number;
+  wholeRecordCorrect: boolean | null;
+  errorType: EvalErrorType;
+  overallScore: number | null; // 0 to 100
+}
 
 export interface ExtractedMetadata {
   account_id: string | null;
@@ -74,6 +129,21 @@ export interface TelemetryOutput {
   business_process_advisory: string;
 }
 
+export interface ExecutionMeta {
+  provider: string;
+  model: string;
+  classifierMode: 'llm' | 'code';
+  temperature: number;
+  accessMethod: 'Cloud API' | 'Local Hosted' | 'Custom Gateway' | 'Deterministic Code';
+  totalDurationMs: number;
+  stepDurationsMs: Record<string, number>;
+  executedAt: string;
+  formatCompliant: boolean;
+  failureType: FailureType;
+  failureDetail?: string;
+  usedFallback: boolean;
+}
+
 export interface BlackboardSlate {
   raw_input: {
     from: string;
@@ -85,13 +155,7 @@ export interface BlackboardSlate {
   agent3_router?: RouterOutput;
   agent4_reply?: ReplyDrafterOutput;
   agent5_telemetry?: TelemetryOutput;
-  execution_meta?: {
-    provider: string;
-    model: string;
-    totalDurationMs: number;
-    stepDurationsMs: Record<string, number>;
-    executedAt: string;
-  };
+  execution_meta?: ExecutionMeta;
 }
 
 export type EmailStatus = 'Pending' | 'Processing' | 'Processed' | 'Security_Flagged' | 'Error';
@@ -107,9 +171,10 @@ export interface EmailItem {
   error?: string;
   slate?: BlackboardSlate;
   datasetName?: string;
+  groundTruth?: EmailGroundTruth;
 }
 
-export type LLMProviderId = 'gemini' | 'openai' | 'anthropic' | 'ollama' | 'custom';
+export type LLMProviderId = 'gemini' | 'openai' | 'anthropic' | 'ollama' | 'custom' | 'code-baseline';
 
 export interface LLMConfig {
   provider: LLMProviderId;
@@ -117,6 +182,36 @@ export interface LLMConfig {
   endpoint: string;
   apiKey?: string;
   enableTelemetry?: boolean;
+  classifierMode?: 'llm' | 'code';
+  temperature?: number;
+  timeoutMs?: number;
+  allowFallbackOnFailure?: boolean;
+}
+
+export interface CandidateModelProfile {
+  id: string;
+  label: string;
+  enabled: boolean;
+  config: LLMConfig;
+}
+
+export interface ScoringWeights {
+  accuracy: number;
+  consistency: number;
+  doNotDecide: number;
+  formatCompliance: number;
+  costEfficiency: number;
+  latency: number;
+  locked: boolean;
+  lockedAt?: string;
+}
+
+export interface AcceptanceThresholds {
+  minCategoryAccuracyPct: number;
+  minConsistencyPct: number;
+  minFormatCompliancePct: number;
+  maxFalseNegativeRatePct: number;
+  maxLatencyMs: number;
 }
 
 export interface PipelineAgentDef {
@@ -125,17 +220,22 @@ export interface PipelineAgentDef {
   title: string;
   role: string;
   description: string;
-  executionMode?: 'code' | 'llm';
+  executionMode?: 'code' | 'llm' | 'hybrid';
   promptInstructions: string;
   expectedOutputKeys: string[];
 }
 
 export interface TriageRunRecord {
   runId: string;
+  batchId?: string;
+  repeatIndex?: number;
   timestamp: number;
   dateStr: string;
   datasetName: string;
   telemetryEnabled: boolean;
+  classifierMode: 'llm' | 'code';
+  temperature: number;
+  accessMethod: string;
   emailId: string;
   from: string;
   subject: string;
@@ -167,5 +267,11 @@ export interface TriageRunRecord {
   costTip: string;
   businessAdvisory: string;
   extractedMetadata: ExtractedMetadata;
+  formatCompliant: boolean;
+  failureType: FailureType;
+  failureDetail?: string;
+  usedFallback: boolean;
+  groundTruth?: EmailGroundTruth;
+  evaluation?: RunEvaluationResult;
   slate: BlackboardSlate;
 }

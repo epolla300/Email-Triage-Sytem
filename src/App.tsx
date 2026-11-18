@@ -96,8 +96,8 @@ export default function App() {
       prev.map((e) => (e.id === emailId ? { ...e, status: 'Processing', activeStepIndex: 0 } : e))
     );
 
-    // Simulate animated step transitions for live visual feedback (Agents 1-2 run instantaneously in code)
-    const stepDelays = [90, 90, 350, 450];
+    // Simulate animated step transitions for live visual feedback (Agent 1 runs in code; Agents 2-5 run via LLM)
+    const stepDelays = [90, 350, 350, 450];
     const stepsToAnimate = isTelemetryActive ? 4 : 3;
     for (let i = 0; i < stepsToAnimate; i++) {
       setActiveAgentIndex(i);
@@ -145,7 +145,7 @@ export default function App() {
 
         addFeedEvent(
           'Agent 2: Classifier',
-          `[Code Engine · 0 tokens] Category: "${slate.agent2_classifier?.category}" · Intent: "${slate.agent2_classifier?.intent}" (Urgency ${slate.agent2_classifier?.urgency}/5)`,
+          `Category: "${slate.agent2_classifier?.category}" · Intent: "${slate.agent2_classifier?.intent}" (Urgency ${slate.agent2_classifier?.urgency}/5)`,
           'info'
         );
 

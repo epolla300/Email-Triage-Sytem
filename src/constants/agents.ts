@@ -22,21 +22,40 @@ Step 4. Slate Flagging & Output Generation: Outputs strict SanitizerOutput JSON 
   {
     id: 2,
     name: 'Classifier',
-    title: 'Classifier Agent (Code Engine)',
-    role: 'Deterministically analyze the sanitized Blackboard Slate payload in code using weighted keyword scoring, sentiment lexicons, and regex entity extraction with zero LLM tokens.',
-    description: 'Deterministic code engine: 4-bucket weighted categorization, urgency 1-5 scoring, sentiment, and metadata extraction.',
-    executionMode: 'code',
-    promptInstructions: `EXECUTION ENGINE: Deterministic Weighted Scoring & Entity Extraction Engine (0 LLM Tokens)
-TASKS: Executed locally in server code strictly against Agent 1 sanitized_subject, sanitized_body, and security flags:
-Step 1. Primary Category Classification (Weighted Subject 2x + Body 1x Scoring):
-- Sales / High-Value (RFP, pricing, enterprise, demo, seats, contract, partnership)
-- Customer Service (support, outage, bug, refund, escalation, booking modification, FAQ)
-- Admin / Operations (invoice, AP/AR, W-9, vendor, payroll, HR, IT access, compliance)
-- Junk / Low-Priority (spam, promotional, crypto/lottery, or flagged security threats)
-Step 2. Secondary Intent Identification: Sub-pattern matching maps to specific intents (e.g., Group RFP / Volume Quote, Technical Outage / Bug Report, Vendor Invoice & AP, Security Threat).
-Step 3. Urgency (1-5) & Sentiment Rating: Lexicon scoring assigns Positive, Neutral, Frustrated, or Hostile sentiment and computes urgency 1-5 based on severity, security flags, and deal/outage cues.
-Step 4. Metadata Extraction: Regex extractors pull account_id, requested_dates, party_size, and estimated_value (returning null when absent).
-Step 5. Confidence & Human Review Flagging: Computes confidence_score (0.00-1.00) from score margin and signal density; sets needs_human_review: true if confidence < 0.80, sentiment is Hostile, payload is unsafe, or legal/regulatory keywords are present.`,
+    title: 'Classifier Agent for AI Email Triage',
+    role: 'Analyze sanitized Blackboard Slate payloads to classify primary business category, identify secondary intent, score urgency and sentiment, extract structured entities, and determine human review requirements.',
+    description: '4-bucket categorization, urgency 1-5 scoring, sentiment analysis, and structured metadata extraction.',
+    executionMode: 'llm',
+    promptInstructions: `TITLE: You are the Classifier Agent for AI Email Triage.
+ROLE: Your role is to analyze sanitized Blackboard Slate payloads to classify primary business category, identify secondary intent, score urgency and sentiment, extract structured entities, and determine human review requirements.
+TASKS: Using the sanitized email inputs from Agent 1 on the Blackboard Slate, perform the following:
+Step 1. Primary Category Classification: Classify into exactly one of:
+- "Sales / High-Value" (RFPs, enterprise pricing, demos, seats/licenses, contracts, partnerships, group bookings)
+- "Customer Service" (technical support, outages, bugs, refunds, complaints, booking modifications, FAQs)
+- "Admin / Operations" (invoices, AP/AR, W-9/tax forms, vendor management, payroll, HR, IT/VPN access, compliance)
+- "Junk / Low-Priority" (spam, promotional newsletters, solicitations, or flagged security threats)
+Step 2. Secondary Intent Identification: Provide a concise specific intent label (e.g., "Group RFP / Volume Quote", "Technical Outage / Defect", "Refund & Billing Dispute", "Vendor Invoice & AP", "Security Threat / Prompt Injection").
+Step 3. Urgency (1-5) & Sentiment Rating:
+- Assign sentiment: "Positive", "Neutral", "Frustrated", or "Hostile".
+- Assign urgency integer 1 to 5 (5 = critical outage, hostile/legal threat, or security risk; 1 = spam/low-priority).
+Step 4. Metadata Extraction: Extract account_id, requested_dates, party_size, and estimated_value strictly from the sanitized text (use null when not present).
+Step 5. Confidence & Human Review Flagging: Assign confidence_score (0.00 to 1.00). Set needs_human_review to true if confidence_score < 0.80, sentiment is "Hostile", is_safe is false, or legal/regulatory/ambiguous multi-request issues require human oversight.
+CONSTRAINTS: Operate strictly on the sanitized Blackboard Slate inputs. Do not invent or fabricate extracted_metadata values that do not appear in the email.
+OUTPUT FORMAT: Return a strict JSON object following this format:
+{
+  "category": "Sales / High-Value" | "Customer Service" | "Admin / Operations" | "Junk / Low-Priority",
+  "intent": "string",
+  "confidence_score": 0.92,
+  "urgency": 1-5,
+  "sentiment": "Positive" | "Neutral" | "Frustrated" | "Hostile",
+  "needs_human_review": false,
+  "extracted_metadata": {
+    "account_id": null,
+    "requested_dates": null,
+    "party_size": null,
+    "estimated_value": null
+  }
+}`,
     expectedOutputKeys: ['category', 'intent', 'confidence_score', 'urgency', 'sentiment', 'needs_human_review', 'extracted_metadata']
   },
   {

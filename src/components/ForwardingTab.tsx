@@ -21,10 +21,11 @@ interface ForwardingTabProps {
 }
 
 const DEPARTMENTS = [
-  { id: 'Sales / High-Value', label: 'Sales / High-Value', icon: '💼' },
-  { id: 'Customer Service', label: 'Customer Service & Support', icon: '🎧' },
-  { id: 'Admin / Operations', label: 'Admin / Operations & Finance', icon: '📋' },
-  { id: 'Junk / Low-Priority', label: 'Junk / Low-Priority / Quarantine', icon: '🛡️' }
+  { id: 'Sales / High-Value', label: 'Sales / High-Value' },
+  { id: 'Customer Service', label: 'Customer Service & Support' },
+  { id: 'Admin / Operations', label: 'Admin / Operations & Finance' },
+  { id: 'Insufficient Info / Unroutable', label: 'Human Triage / Insufficient Info' },
+  { id: 'Junk / Low-Priority', label: 'Junk / Low-Priority / Quarantine' }
 ];
 
 export const ForwardingTab: React.FC<ForwardingTabProps> = ({
@@ -38,6 +39,7 @@ export const ForwardingTab: React.FC<ForwardingTabProps> = ({
     'Sales / High-Value': true,
     'Customer Service': true,
     'Admin / Operations': true,
+    'Insufficient Info / Unroutable': true,
     'Junk / Low-Priority': true
   });
   const [editedBody, setEditedBody] = useState<string>('');
@@ -137,6 +139,17 @@ export const ForwardingTab: React.FC<ForwardingTabProps> = ({
                 if (dept.id === 'Junk / Low-Priority') {
                   return cat === 'Junk / Low-Priority' || e.slate?.agent1_sanitizer?.is_safe === false;
                 }
+                if (dept.id === 'Insufficient Info / Unroutable') {
+                  return (
+                    cat === 'Insufficient Info / Unroutable' ||
+                    cat === 'Evaluation_Failed' ||
+                    (cat !== 'Sales / High-Value' &&
+                      cat !== 'Customer Service' &&
+                      cat !== 'Admin / Operations' &&
+                      cat !== 'Junk / Low-Priority' &&
+                      e.slate?.agent1_sanitizer?.is_safe !== false)
+                  );
+                }
                 return cat === dept.id;
               });
 
@@ -157,7 +170,6 @@ export const ForwardingTab: React.FC<ForwardingTabProps> = ({
                     className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-base">{dept.icon}</span>
                       <span className="text-xs font-bold text-slate-900">
                         {dept.label}
                       </span>

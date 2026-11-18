@@ -125,14 +125,15 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
     if ((r.confidenceScore || 0) >= 0.85) highConfCount++;
 
     agentTokens[0] += 0;
-    agentTokens[1] += 0;
     if (r.telemetryEnabled === false) {
-      agentTokens[2] += Math.floor(inT * 0.42);
-      agentTokens[3] += Math.floor(inT * 0.58);
+      agentTokens[1] += Math.floor(inT * 0.30);
+      agentTokens[2] += Math.floor(inT * 0.30);
+      agentTokens[3] += Math.floor(inT * 0.40);
     } else {
-      agentTokens[2] += Math.floor(inT * 0.36);
-      agentTokens[3] += Math.floor(inT * 0.48);
-      agentTokens[4] += Math.floor(inT * 0.16);
+      agentTokens[1] += Math.floor(inT * 0.26);
+      agentTokens[2] += Math.floor(inT * 0.26);
+      agentTokens[3] += Math.floor(inT * 0.34);
+      agentTokens[4] += Math.floor(inT * 0.14);
     }
   });
 
@@ -378,7 +379,7 @@ export const AnalyticsDrawer: React.FC<AnalyticsDrawerProps> = ({
             <div className="h-32 flex items-end gap-3 pt-6 pb-2 px-2 border-b border-slate-200">
               {[
                 { name: '1. Sanitizer', val: agentTokens[0], isCode: true },
-                { name: '2. Classifier', val: agentTokens[1], isCode: true },
+                { name: '2. Classifier', val: agentTokens[1], isCode: false },
                 { name: '3. Router', val: agentTokens[2], isCode: false },
                 { name: '4. Drafter', val: agentTokens[3], isCode: false },
                 { name: '5. Telemetry', val: agentTokens[4], isCode: false }
